@@ -16,7 +16,7 @@ El proyecto busca conectar educación ambiental, gamificación, aprendizaje inte
 | Luau | Implementación de servicios de servidor. |
 | Visual Studio Code | Edición del código fuente. |
 | Rojo 7.7.0 | Sincronización del código entre el repositorio y Roblox Studio. |
-| Git | Historial de cambios cuando el repositorio esté inicializado y Git esté disponible. |
+| Git | Control de versiones configurado en la rama `main`, con remoto de GitHub. |
 
 ## Arquitectura
 
@@ -189,7 +189,7 @@ El diagrama representa el flujo implementado en código. La existencia de eviden
 
 ### Pendiente de verificación registrada
 
-No se localizaron registros de ejecución, capturas ni historial Git disponible que demuestren pruebas manuales en una sesión de Roblox Studio. Por ello, las siguientes pruebas deben ejecutarse y registrar su resultado antes de marcarlas como verificadas:
+Durante el desarrollo se realizaron pruebas manuales en Roblox Studio para validar PlayerDataService, SeedService, FarmingService, el ciclo de cultivo y la visualización del cultivo. Sin embargo, estas pruebas no cuentan actualmente con registros externos, capturas ni evidencia conservada dentro del repositorio. Por ello, deben considerarse pruebas de desarrollo y no evidencia formal reproducible; deberán repetirse y registrarse formalmente cuando corresponda.
 
 - PlayerData: confirmar los cuatro valores iniciales al entrar un jugador.
 - SeedService: probar `AddSeeds(player, 5)` y `ConsumeSeed(player)`.
@@ -224,30 +224,49 @@ La prueba directa de `Harvest` existe en la API del servicio, pero la cosecha me
 
 ## Historial de cambios
 
-No se encontró un directorio `.git` ni un ejecutable Git disponible en esta carpeta durante la elaboración de esta documentación. Por tanto, no hay fechas verificables de commits que permitan asociar con precisión cada funcionalidad a una fecha de incorporación.
+Git está configurado para este proyecto. La rama principal es `main` y el remoto `origin` está configurado como `https://github.com/LuisDiaz122001/Jardin-Agrodiverso.git`.
+
+El primer commit verificable registra la versión actual del proyecto. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
 
 | Fecha | Cambio documentado | Evidencia |
 | --- | --- | --- |
-| Pendiente de documentación | PlayerDataService existente | `src/ServerScriptService/Systems/PlayerData/PlayerDataService.lua` |
-| Pendiente de documentación | SeedService existente | `src/ServerScriptService/Systems/Seeds/SeedService.lua` |
-| Pendiente de documentación | FarmingService existente | `src/ServerScriptService/Systems/Farming/FarmingService.lua` |
-| Pendiente de documentación | Interacción de plantación existente | `src/ServerScriptService/Systems/Farming/PlotInteractionService.lua` |
-| Pendiente de documentación | Sincronización visual existente | `src/ServerScriptService/Systems/Farming/CropVisualService.lua` |
+| 2026-09-11 | Inicialización del repositorio y registro de la versión actual del proyecto | `c951e7d` — `chore: inicializa Jardin Agrodiverso` |
 
-Las marcas de tiempo del sistema de archivos no se usan como fechas de desarrollo: no sustituyen la evidencia de un commit ni permiten atribuir de forma fiable una funcionalidad concreta.
+A partir de este commit, los cambios relevantes deben registrarse mediante commits descriptivos. El README resume hitos, pero el historial de Git es la evidencia principal de la evolución del código.
 
 ## Cómo consultar el historial de cambios
 
-Cuando Git esté configurado en el repositorio, el historial es la evidencia principal de la evolución del código. El README resume cambios relevantes, pero no reemplaza el historial de Git.
+El historial de Git es la evidencia principal de la evolución del código. El README resume hitos relevantes, pero no reemplaza dicho historial.
+
+Revisar el estado antes de registrar cambios:
 
 ```bash
-git log --date=short --pretty=format:"%h | %ad | %s"
+git status
+```
+
+```bash
+git log --oneline --date=short --pretty=format:"%h | %ad | %s"
 ```
 
 Para revisar archivos modificados por cada commit:
 
 ```bash
 git log --stat
+```
+
+Flujo recomendado:
+
+1. Realizar un cambio.
+2. Probarlo en Roblox Studio.
+3. Verificar que funciona.
+4. Revisar `git status`.
+5. Crear un commit descriptivo.
+6. Hacer `git push`.
+
+```bash
+git add .
+git commit -m "tipo: descripción del cambio"
+git push
 ```
 
 Al actualizar esta sección, solo se deben registrar fechas y asociaciones de funcionalidades que puedan comprobarse mediante commits u otra evidencia conservada en el proyecto.
@@ -325,4 +344,4 @@ Después, repetir la plantación usando el `ProximityPrompt` con una semilla dis
 
 ## Documentación futura
 
-**Pendiente de documentación:** registrar los commits y sus fechas cuando Git esté inicializado o vuelva a estar disponible; documentar resultados de pruebas manuales con evidencia conservada; y confirmar periódicamente desde Studio que la estructura del mapa coincide con esta referencia.
+**Pendiente de documentación:** documentar resultados de pruebas manuales con evidencia conservada; asociar nuevos hitos a commits verificables; y confirmar periódicamente desde Studio que la estructura del mapa coincide con esta referencia.
