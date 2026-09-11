@@ -144,7 +144,7 @@ El estado se almacena como atributos de la parcela: `CropState` y `FarmingCycle`
 
 `PlotInteractionService` es el puente entre el mapa y la lógica de cultivo. Busca `Workspace.Stations.Farm`, recorre los `ProximityPrompt` existentes e identifica su parcela ascendiendo hasta un ancestro con atributo `CropType`.
 
-El evento `Triggered` llama a `FarmingService:Plant(player, plot)`. El servicio evita conexiones duplicadas si se inicializa más de una vez. Actualmente conecta la interacción física de **plantación**; no implementa una interacción física de cosecha.
+El evento `Triggered` consulta `FarmingService:GetCropState(plot)` y decide la acción sin duplicar reglas de negocio: en `Empty` llama a `FarmingService:Plant(player, plot)`, en `Growing` no ejecuta ninguna acción y en `Ready` llama a `FarmingService:Harvest(player, plot)`. El servicio evita conexiones duplicadas si se inicializa más de una vez.
 
 ### CropVisualService
 
@@ -164,13 +164,18 @@ El servicio inicializa el estado al arrancar y escucha `GetAttributeChangedSigna
 flowchart TD
     A[Jugador] --> B[ProximityPrompt existente]
     B --> C[PlotInteractionService]
-    C --> D[FarmingService:Plant]
-    D --> E[SeedService:ConsumeSeed]
-    E --> F[CropState = Growing]
-    F --> G[CropVisualService]
-    G --> H[CornCrop visible]
+    C --> D{CropState}
+    D -->|Empty| E[FarmingService:Plant]
+    E --> F[SeedService:ConsumeSeed]
+    F --> G[CropState = Growing]
+    G --> H[CropVisualService: CornCrop visible]
     H --> I[30 segundos]
     I --> J[CropState = Ready]
+    D -->|Growing| K[Sin acción]
+    D -->|Ready| L[FarmingService:Harvest]
+    L --> M[Coins +10 y XP +5]
+    M --> N[CropState = Empty]
+    N --> O[CornCrop oculto]
 ```
 
 El diagrama representa el flujo implementado en código. La existencia de evidencia registrada de pruebas de ejecución debe confirmarse por separado en la sección siguiente.
@@ -184,12 +189,14 @@ El diagrama representa el flujo implementado en código. La existencia de eviden
 | PlayerData inicial | `PlayerDataService.lua` define Coins = 100, Level = 1, XP = 0 y Seeds = 0. |
 | Semillas | `SeedService.lua` implementa consulta, adición validada y consumo condicionado. |
 | Cultivo | `FarmingService.lua` implementa los estados, 30 segundos para Corn, recompensas y limpieza posterior. |
-| Plantación física | `PlotInteractionService.lua` conecta `ProximityPrompt.Triggered` con `FarmingService:Plant`. |
+| Interacción física | `PlotInteractionService.lua` consulta `CropState` y delega en `FarmingService:Plant` o `FarmingService:Harvest`. |
 | Visualización | `CropVisualService.lua` sincroniza visibilidad con `CropState`. |
 
 ### Pendiente de verificación registrada
 
 Durante el desarrollo se realizaron pruebas manuales en Roblox Studio para validar PlayerDataService, SeedService, FarmingService, el ciclo de cultivo y la visualización del cultivo. Sin embargo, estas pruebas no cuentan actualmente con registros externos, capturas ni evidencia conservada dentro del repositorio. Por ello, deben considerarse pruebas de desarrollo y no evidencia formal reproducible; deberán repetirse y registrarse formalmente cuando corresponda.
+
+La interacción física de cosecha mediante el mismo `ProximityPrompt` fue probada exitosamente en Roblox Studio. Con la parcela en `Ready`, la interacción delegó en `FarmingService:Harvest(player, plot)`, otorgó `10 Coins` y `5 XP`, devolvió la parcela a `Empty` y ocultó `CornCrop`. Tras quedar con `0` semillas, la parcela no permitió una nueva plantación.
 
 - PlayerData: confirmar los cuatro valores iniciales al entrar un jugador.
 - SeedService: probar `AddSeeds(player, 5)` y `ConsumeSeed(player)`.
@@ -197,7 +204,7 @@ Durante el desarrollo se realizaron pruebas manuales en Roblox Studio para valid
 - Plantación física: activar el `ProximityPrompt` de `CornPlot` con una semilla disponible.
 - Visualización: comprobar que `CornCrop` se oculta en `Empty` y se muestra en `Growing` y `Ready`.
 
-La prueba directa de `Harvest` existe en la API del servicio, pero la cosecha mediante interacción física sigue pendiente de implementación.
+La prueba directa de `Harvest` existe en la API del servicio y la cosecha mediante interacción física está implementada y fue probada exitosamente durante el desarrollo.
 
 ## Estado del desarrollo
 
@@ -212,7 +219,7 @@ La prueba directa de `Harvest` existe en la API del servicio, pero la cosecha me
 | Plantación mediante ProximityPrompt | Implementada; prueba de ejecución pendiente de registro |
 | CropVisualService | Implementado; prueba de ejecución pendiente de registro |
 | Crecimiento `Growing → Ready` | Implementado; prueba de ejecución pendiente de registro |
-| Cosecha mediante interacción | En desarrollo |
+| Cosecha mediante interacción | Implementada; prueba manual exitosa sin registro formal |
 | Economía completa | Pendiente |
 | Inventario | Pendiente |
 | Misiones | Pendiente |
@@ -226,11 +233,13 @@ La prueba directa de `Harvest` existe en la API del servicio, pero la cosecha me
 
 Git está configurado para este proyecto. La rama principal es `main` y el remoto `origin` está configurado como `https://github.com/LuisDiaz122001/Jardin-Agrodiverso.git`.
 
-El primer commit verificable registra la versión actual del proyecto. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
+Los commits verificables registran la versión inicial, su documentación y la implementación de cosecha mediante `ProximityPrompt`. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
 
-| Fecha | Cambio documentado | Evidencia |
+| Fecha | Commit | Mensaje |
 | --- | --- | --- |
-| 2026-09-11 | Inicialización del repositorio y registro de la versión actual del proyecto | `c951e7d` — `chore: inicializa Jardin Agrodiverso` |
+| 2026-09-11 | `c951e7d` | `chore: inicializa Jardin Agrodiverso` |
+| 2026-09-11 | `062cfc6` | `docs: actualiza documentación y control de versiones` |
+| 2026-09-11 | `7d87c4e` | `feat: implementa cosecha mediante ProximityPrompt` |
 
 A partir de este commit, los cambios relevantes deben registrarse mediante commits descriptivos. El README resume hitos, pero el historial de Git es la evidencia principal de la evolución del código.
 
@@ -332,12 +341,12 @@ print(FarmingService:Harvest(player, plot))
 print(FarmingService:GetCropState(plot)) -- Empty
 ```
 
-Después, repetir la plantación usando el `ProximityPrompt` con una semilla disponible y revisar visualmente `CornCrop` durante los estados `Empty`, `Growing` y `Ready`. Registrar el resultado de estas pruebas antes de actualizar su estado en este documento.
+Después, repetir la plantación usando el `ProximityPrompt` con una semilla disponible, esperar el estado `Ready` y usar el mismo prompt para cosechar. Verificar `Coins +10`, `XP +5`, el retorno a `Empty`, que `CornCrop` se oculte y que, con `0` semillas, no sea posible plantar nuevamente. Registrar el resultado de estas pruebas antes de actualizar su evidencia formal en este documento.
 
 ## Próximos pasos
 
 1. Registrar y conservar evidencia de las pruebas de servidor, interacción física y visualización.
-2. Diseñar una interacción física de cosecha que delegue en `FarmingService:Harvest`.
+2. Registrar evidencia formal reproducible de la cosecha mediante `ProximityPrompt`.
 3. Definir los siguientes cultivos mediante configuraciones de FarmingService.
 4. Diseñar persistencia con DataStore dentro de la responsabilidad de PlayerDataService.
 5. Incorporar economía, inventario, UI, misiones, NPCs y sistemas agroecológicos solo como etapas separadas y solicitadas.
