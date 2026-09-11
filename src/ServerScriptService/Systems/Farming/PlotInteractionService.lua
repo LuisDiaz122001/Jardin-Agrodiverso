@@ -42,7 +42,13 @@ local function connectPrompt(prompt: ProximityPrompt, plot: Instance)
 	end
 
 	connectedPrompts[prompt] = prompt.Triggered:Connect(function(player)
-		FarmingService:Plant(player, plot)
+		local cropState = FarmingService:GetCropState(plot)
+
+		if cropState == "Empty" then
+			FarmingService:Plant(player, plot)
+		elseif cropState == "Ready" then
+			FarmingService:Harvest(player, plot)
+		end
 	end)
 end
 
