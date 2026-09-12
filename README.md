@@ -50,7 +50,8 @@ Jardín Agrodiverso/
             ├── Inventory/
             │   └── InventoryService.lua
             ├── Seeds/
-            │   └── SeedService.lua
+            │   ├── SeedService.lua
+            │   └── SeedShopService.lua
             └── Farming/
                 ├── CropCatalog.lua
                 ├── FarmingService.lua
@@ -130,6 +131,28 @@ Los datos permanecen en memoria y son de uso exclusivo del servidor. **No existe
 | `GetSeedCount(player)` | Devuelve la cantidad actual o `0` si no hay datos activos. |
 | `AddSeeds(player, amount)` | Agrega solo cantidades enteras, positivas y finitas a un jugador con datos activos. |
 | `ConsumeSeed(player)` | Consume una semilla únicamente cuando el jugador tiene al menos una. |
+
+### SeedShopService
+
+`SeedShopService` implementa el Banco de Semillas durante la sesión. El servicio es stateless: no mantiene datos globales de jugadores, saldos ni inventarios propios. Toda compra se valida y ejecuta en el servidor, usando `PlayerDataService` como autoridad de los datos.
+
+El catálogo actual de semillas es:
+
+| Identificador | `ItemId` | Precio |
+| --- | --- | ---: |
+| `CornSeed` | `Seeds` | 5 Coins |
+
+`CornSeed` conserva el `ItemId = "Seeds"` para mantener la compatibilidad con `PlayerData.Seeds`, `SeedService` y `FarmingService`.
+
+| Método | Comportamiento |
+| --- | --- |
+| `GetSeedPrice(seedId)` | Devuelve el precio configurado de la semilla o `nil` si el identificador no existe. |
+| `CanAffordSeeds(player, seedId, amount)` | Comprueba que el jugador tenga datos activos, la semilla exista, la cantidad sea válida y haya suficientes Coins. |
+| `BuySeeds(player, seedId, amount)` | Valida la compra, agrega todas las semillas mediante `SeedService` y descuenta los Coins únicamente cuando la operación puede completarse. |
+
+El `seedId` debe existir en el catálogo. La cantidad debe ser positiva, entera y finita; se rechazan valores cero, negativos, decimales, `NaN` e infinitos. Las compras inválidas o sin saldo suficiente no modifican Coins ni Seeds.
+
+`SeedShopService` consulta `PlayerDataService:GetPlayerData(player)` para validar el saldo y delega la adición de semillas en `SeedService:AddSeeds`. `SeedService` continúa utilizando `InventoryService`, que enruta el identificador compatible `"Seeds"` al campo canónico `PlayerData.Seeds`. No se crea un almacenamiento paralelo.
 
 ### CropCatalog
 
@@ -266,7 +289,7 @@ La prueba directa de `Harvest` existe en la API del servicio y la cosecha median
 | Crecimiento `Growing → Ready` | Implementado; prueba manual exitosa junto con las etapas visuales |
 | Cosecha mediante interacción | Implementada; prueba manual exitosa sin registro formal |
 | Obtención natural de semillas | Implementada; validación funcional manual sin demostración estadística formal |
-| Banco de Semillas | Pendiente |
+| Banco de Semillas | Implementado; catálogo de `CornSeed` a 5 Coins y compras validadas en servidor |
 | Economía completa | Pendiente |
 | Inventario | Implementado; objetos nuevos en `PlayerData.Inventory` y `Seeds` compatible mediante `InventoryService` |
 | Misiones | Pendiente |
@@ -284,6 +307,7 @@ Los commits verificables registran la versión inicial, su documentación, la co
 
 | Fecha | Commit | Mensaje |
 | --- | --- | --- |
+| 2026-09-12 | `7d81d2c` | `feat: implementa banco de semillas` |
 | 2026-09-11 | `83fbf84` | `feat: implementa inventario base` |
 | 2026-09-11 | `74a3921` | `feat: implementa crecimiento visual por etapas` |
 | 2026-09-11 | `7bbc04e` | `docs: actualiza documentación de obtención de semillas` |
