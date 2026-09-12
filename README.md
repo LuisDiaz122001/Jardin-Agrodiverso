@@ -32,7 +32,7 @@ Roblox Studio
 
 `default.project.json` sincroniza `src/ReplicatedStorage`, `src/ServerScriptService` y `src/StarterPlayer`. No sincroniza `Workspace`; por tanto, las parcelas, prompts y modelos visuales se administran directamente en Roblox Studio. Esta separación evita que una sincronización de código reemplace accidentalmente el mapa.
 
-`Main.server.lua` es el punto de entrada del servidor. Inicializa, en orden, PlayerData, las interacciones de parcela y la capa visual de cultivos. `FarmingService` permanece como autoridad del gameplay de cultivo; `CropVisualService` solo presenta el estado. `CropCatalog` concentra la definición de cada cultivo para no duplicar reglas entre ambos.
+`Main.server.lua` es el punto de entrada del servidor. Inicializa, en orden, PlayerData, las interacciones de parcela y la capa visual de cultivos. `FarmingService` permanece como autoridad del gameplay de cultivo; `CropVisualService` solo presenta el estado. `CropCatalog` concentra la definición de cada cultivo para no duplicar reglas entre ambos. `InventoryService` centraliza las operaciones de objetos sobre el `PlayerData` del jugador, sin mantener un almacenamiento paralelo.
 
 ## Estructura del proyecto
 
@@ -47,6 +47,8 @@ Jardín Agrodiverso/
         └── Systems/
             ├── PlayerData/
             │   └── PlayerDataService.lua
+            ├── Inventory/
+            │   └── InventoryService.lua
             ├── Seeds/
             │   └── SeedService.lua
             └── Farming/
@@ -102,12 +104,26 @@ Los servicios no crean ni eliminan estos objetos. `CropVisualService` solo ajust
 | Level | 1 |
 | XP | 0 |
 | Seeds | 0 |
+| Inventory | `{}` |
 
 Los datos permanecen en memoria y son de uso exclusivo del servidor. **No existe persistencia con DataStore**; al terminar la sesión, los datos se eliminan.
 
+### InventoryService
+
+`InventoryService` es la capa responsable de las operaciones del inventario durante la sesión. Obtiene los datos mediante `PlayerDataService:GetPlayerData(player)` y almacena los objetos nuevos en `PlayerData.Inventory`, un diccionario por jugador indexado por `itemId`. No existe un inventario global ni un segundo almacenamiento independiente.
+
+| Método | Comportamiento |
+| --- | --- |
+| `GetItemCount(player, itemId)` | Devuelve la cantidad del objeto o `0` si no existe o no hay datos activos. |
+| `AddItem(player, itemId, amount)` | Agrega una cantidad entera, positiva y finita al inventario del jugador. |
+| `RemoveItem(player, itemId, amount)` | Elimina objetos solo si el jugador tiene unidades suficientes; devuelve `false` en caso contrario. |
+| `HasItem(player, itemId, amount)` | Comprueba si el jugador posee al menos la cantidad solicitada. |
+
+`itemId` debe ser un identificador no vacío y sin espacios. Las cantidades negativas, cero, decimales, infinitas o no numéricas se rechazan.
+
 ### SeedService
 
-`SeedService` opera sobre el campo `Seeds` de `PlayerDataService`; no mantiene una copia ni una tabla paralela de semillas.
+`SeedService` conserva su API para la agricultura, pero delega sus operaciones en `InventoryService`. El campo legado `PlayerData.Seeds` sigue siendo el almacenamiento canónico de semillas; no se duplica dentro de `PlayerData.Inventory`. Cuando `InventoryService` recibe el identificador `"Seeds"`, enruta la operación al campo `Seeds`.
 
 | Operación | Comportamiento |
 | --- | --- |
@@ -252,7 +268,7 @@ La prueba directa de `Harvest` existe en la API del servicio y la cosecha median
 | Obtención natural de semillas | Implementada; validación funcional manual sin demostración estadística formal |
 | Banco de Semillas | Pendiente |
 | Economía completa | Pendiente |
-| Inventario | Pendiente |
+| Inventario | Implementado; objetos nuevos en `PlayerData.Inventory` y `Seeds` compatible mediante `InventoryService` |
 | Misiones | Pendiente |
 | NPCs | Pendiente |
 | Sistemas agroecológicos | Pendiente |
@@ -268,6 +284,7 @@ Los commits verificables registran la versión inicial, su documentación, la co
 
 | Fecha | Commit | Mensaje |
 | --- | --- | --- |
+| 2026-09-11 | `83fbf84` | `feat: implementa inventario base` |
 | 2026-09-11 | `74a3921` | `feat: implementa crecimiento visual por etapas` |
 | 2026-09-11 | `7bbc04e` | `docs: actualiza documentación de obtención de semillas` |
 | 2026-09-11 | `4771ca9` | `feat: agrega obtencion natural de semillas` |
@@ -361,10 +378,18 @@ Las pruebas deben realizarse en una sesión de servidor de Roblox Studio, nunca 
 
 ```lua
 local SeedService = require(game.ServerScriptService.Systems.Seeds.SeedService)
+local InventoryService = require(game.ServerScriptService.Systems.Inventory.InventoryService)
 local FarmingService = require(game.ServerScriptService.Systems.Farming.FarmingService)
 
 local player = game.Players:GetPlayers()[1]
 local plot = workspace.Stations.Farm.CornPlot
+
+print(InventoryService:GetItemCount(player, "Seeds"))
+print(InventoryService:AddItem(player, "Wood", 10))
+print(InventoryService:HasItem(player, "Wood", 10))
+print(InventoryService:RemoveItem(player, "Wood", 4))
+print(InventoryService:GetItemCount(player, "Wood"))
+print(InventoryService:RemoveItem(player, "Wood", 100))
 
 print(SeedService:AddSeeds(player, 1))
 print(FarmingService:Plant(player, plot))
