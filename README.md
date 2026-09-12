@@ -268,6 +268,7 @@ Los commits verificables registran la versión inicial, su documentación, la co
 
 | Fecha | Commit | Mensaje |
 | --- | --- | --- |
+| 2026-09-11 | `74a3921` | `feat: implementa crecimiento visual por etapas` |
 | 2026-09-11 | `7bbc04e` | `docs: actualiza documentación de obtención de semillas` |
 | 2026-09-11 | `4771ca9` | `feat: agrega obtencion natural de semillas` |
 | 2026-09-11 | `949e297` | `docs: actualiza historial de cambios` |
