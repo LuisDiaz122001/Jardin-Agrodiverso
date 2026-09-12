@@ -5,6 +5,10 @@
 
 local Players = game:GetService("Players")
 
+-- Modo de desarrollo: cambiar a false antes de probar el comportamiento normal.
+local DEV_MODE = true
+local DEV_TOMATO_SEEDS = 3
+
 export type PlayerData = {
 	Coins: number,
 	Level: number,
@@ -27,13 +31,19 @@ local dataByPlayer: {[Player]: PlayerData} = {}
 local initialized = false
 
 local function createInitialData(): PlayerData
-	return {
+	local playerData: PlayerData = {
 		Coins = DEFAULT_DATA.Coins,
 		Level = DEFAULT_DATA.Level,
 		XP = DEFAULT_DATA.XP,
 		Seeds = DEFAULT_DATA.Seeds,
 		Inventory = {},
 	}
+
+	if DEV_MODE then
+		playerData.Inventory["TomatoSeeds"] = DEV_TOMATO_SEEDS
+	end
+
+	return playerData
 end
 
 function PlayerDataService:CreatePlayerData(player: Player): PlayerData

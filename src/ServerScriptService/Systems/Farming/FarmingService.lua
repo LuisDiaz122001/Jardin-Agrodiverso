@@ -149,7 +149,7 @@ function FarmingService:Plant(player: Player, plot: Instance): boolean
 		return false
 	end
 
-	if not SeedService:ConsumeSeed(player) then
+	if not SeedService:ConsumeSeedByItem(player, cropDefinition.SeedItemId) then
 		return false
 	end
 
@@ -174,7 +174,7 @@ function FarmingService:Harvest(player: Player, plot: Instance): boolean
 	playerData.XP += cropDefinition.XPReward
 
 	if random:NextNumber() < cropDefinition.SeedDropChance then
-		SeedService:AddSeeds(player, 1)
+		SeedService:AddSeedsByItem(player, cropDefinition.SeedItemId, 1)
 	end
 
 	plot:SetAttribute("CropState", "Empty")

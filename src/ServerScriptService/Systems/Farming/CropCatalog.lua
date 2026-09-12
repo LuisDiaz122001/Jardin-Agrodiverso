@@ -18,6 +18,7 @@ export type GrowingVisualStage = {
 }
 
 export type CropDefinition = {
+	SeedItemId: string,
 	GrowthDuration: number,
 	CoinsReward: number,
 	XPReward: number,
@@ -31,6 +32,7 @@ local EMPTY_VISUAL_STAGE_ID = 0
 
 local CROP_DEFINITIONS: {[string]: CropDefinition} = {
 	Corn = {
+		SeedItemId = "Seeds",
 		GrowthDuration = 30,
 		CoinsReward = 10,
 		XPReward = 5,
@@ -47,6 +49,30 @@ local CROP_DEFINITIONS: {[string]: CropDefinition} = {
 				Id = 2,
 				AtProgress = 0.5,
 				Scale = 0.7,
+			},
+		},
+		ReadyVisual = {
+			Id = 3,
+			Scale = 1,
+		},
+	},
+	Tomato = {
+		SeedItemId = "TomatoSeeds",
+		GrowthDuration = 45,
+		CoinsReward = 15,
+		XPReward = 8,
+		SeedDropChance = 0.2,
+		VisualModelName = "TomatoCrop",
+		GrowingVisualStages = {
+			{
+				Id = 1,
+				AtProgress = 0,
+				Scale = 0.25,
+			},
+			{
+				Id = 2,
+				AtProgress = 0.5,
+				Scale = 0.65,
 			},
 		},
 		ReadyVisual = {

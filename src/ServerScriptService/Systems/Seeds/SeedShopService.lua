@@ -16,6 +16,10 @@ local SEED_CATALOG: {[string]: SeedDefinition} = {
 		ItemId = "Seeds",
 		Price = 5,
 	},
+	TomatoSeed = {
+		ItemId = "TomatoSeeds",
+		Price = 8,
+	},
 }
 
 local SeedShopService = {}
@@ -87,7 +91,7 @@ function SeedShopService:BuySeeds(player: Player, seedId: string, amount: number
 	end
 
 	-- SeedService debe completar la adición antes de modificar Coins.
-	if not SeedService:AddSeeds(player, amount) then
+	if not SeedService:AddSeedsByItem(player, seedDefinition.ItemId, amount) then
 		return false
 	end
 
