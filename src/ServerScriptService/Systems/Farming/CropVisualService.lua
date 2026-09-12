@@ -1,14 +1,24 @@
 --!strict
 
--- CropVisualService sincroniza la visibilidad de cultivos ya creados en Studio.
--- Solo modifica Transparency de BasePart existentes dentro de CornCrop.
+-- CropVisualService sincroniza la apariencia de modelos de cultivo ya creados en Studio.
+-- CropState sigue siendo la autoridad de gameplay; VisualGrowthStage solo elige la etapa visible.
+-- No crea ni elimina instancias del mapa.
 
 local Workspace = game:GetService("Workspace")
 
+local CropCatalog = require(script.Parent.CropCatalog)
+
+type CropDefinition = CropCatalog.CropDefinition
+type VisualAppearance = CropCatalog.VisualAppearance
+
 type PlotVisualBinding = {
+	model: Model,
 	parts: {BasePart},
 	originalTransparency: {[BasePart]: number},
-	connection: RBXScriptConnection?,
+	originalScale: number,
+	cropStateConnection: RBXScriptConnection?,
+	visualStageConnection: RBXScriptConnection?,
+	ancestryConnection: RBXScriptConnection?,
 }
 
 local CropVisualService = {}
@@ -26,11 +36,91 @@ local function findFarmRoot(): Instance?
 	return stations:FindFirstChild("Farm")
 end
 
-local function applyCropVisibility(binding: PlotVisualBinding, cropState: unknown)
-	local isVisible = cropState == "Growing" or cropState == "Ready"
+local function buildVisibleNameSet(partNames: {string}?): {[string]: boolean}?
+	if not partNames then
+		return nil
+	end
+
+	local visibleNames: {[string]: boolean} = {}
+
+	for _, partName in partNames do
+		visibleNames[partName] = true
+	end
+
+	return visibleNames
+end
+
+local function resolveAppearance(definition: CropDefinition, plot: Instance): VisualAppearance?
+	local cropState = plot:GetAttribute("CropState")
+
+	if cropState == nil or cropState == "Empty" then
+		return nil
+	end
+
+	if cropState == "Ready" then
+		return definition.ReadyVisual
+	end
+
+	if cropState ~= "Growing" then
+		return nil
+	end
+
+	local visualStage = plot:GetAttribute("VisualGrowthStage")
+
+	if type(visualStage) == "number" then
+		local growingStage = CropCatalog.FindGrowingStage(definition, visualStage)
+
+		if growingStage then
+			return {
+				Id = growingStage.Id,
+				Scale = growingStage.Scale,
+				VisiblePartNames = growingStage.VisiblePartNames,
+			}
+		end
+
+		if visualStage == definition.ReadyVisual.Id then
+			return definition.ReadyVisual
+		end
+	end
+
+	local firstStage = CropCatalog.GetFirstGrowingStage(definition)
+
+	if not firstStage then
+		return definition.ReadyVisual
+	end
+
+	return {
+		Id = firstStage.Id,
+		Scale = firstStage.Scale,
+		VisiblePartNames = firstStage.VisiblePartNames,
+	}
+end
+
+local function applyAppearance(binding: PlotVisualBinding, appearance: VisualAppearance?)
+	if not binding.model.Parent then
+		return
+	end
+
+	if not appearance then
+		binding.model:ScaleTo(binding.originalScale)
+
+		for _, part in binding.parts do
+			if part.Parent then
+				part.Transparency = 1
+			end
+		end
+
+		return
+	end
+
+	binding.model:ScaleTo(binding.originalScale * appearance.Scale)
+
+	local visibleNames = buildVisibleNameSet(appearance.VisiblePartNames)
 
 	for _, part in binding.parts do
 		if part.Parent then
+			local isVisible = visibleNames == nil or visibleNames[part.Name] == true
+
 			if isVisible then
 				part.Transparency = binding.originalTransparency[part]
 			else
@@ -40,21 +130,65 @@ local function applyCropVisibility(binding: PlotVisualBinding, cropState: unknow
 	end
 end
 
-local function bindCornPlot(plot: Instance)
-	if bindingsByPlot[plot] or plot:GetAttribute("CropType") ~= "Corn" then
+local function unbindPlot(plot: Instance)
+	local binding = bindingsByPlot[plot]
+
+	if not binding then
 		return
 	end
 
-	local cornCrop = plot:FindFirstChild("CornCrop")
+	if binding.cropStateConnection then
+		binding.cropStateConnection:Disconnect()
+	end
 
-	if not cornCrop or not cornCrop:IsA("Model") then
+	if binding.visualStageConnection then
+		binding.visualStageConnection:Disconnect()
+	end
+
+	if binding.ancestryConnection then
+		binding.ancestryConnection:Disconnect()
+	end
+
+	bindingsByPlot[plot] = nil
+end
+
+local function refreshPlotVisual(plot: Instance, definition: CropDefinition)
+	local binding = bindingsByPlot[plot]
+
+	if not binding then
+		return
+	end
+
+	applyAppearance(binding, resolveAppearance(definition, plot))
+end
+
+local function bindPlot(plot: Instance)
+	if bindingsByPlot[plot] then
+		return
+	end
+
+	local cropType = plot:GetAttribute("CropType")
+
+	if type(cropType) ~= "string" then
+		return
+	end
+
+	local definition = CropCatalog.Get(cropType)
+
+	if not definition then
+		return
+	end
+
+	local visualModel = plot:FindFirstChild(definition.VisualModelName)
+
+	if not visualModel or not visualModel:IsA("Model") then
 		return
 	end
 
 	local parts = {}
 	local originalTransparency = {}
 
-	for _, descendant in cornCrop:GetDescendants() do
+	for _, descendant in visualModel:GetDescendants() do
 		if descendant:IsA("BasePart") then
 			table.insert(parts, descendant)
 			originalTransparency[descendant] = descendant.Transparency
@@ -66,16 +200,30 @@ local function bindCornPlot(plot: Instance)
 	end
 
 	local binding: PlotVisualBinding = {
+		model = visualModel,
 		parts = parts,
 		originalTransparency = originalTransparency,
-		connection = nil,
+		originalScale = visualModel:GetScale(),
+		cropStateConnection = nil,
+		visualStageConnection = nil,
+		ancestryConnection = nil,
 	}
 
 	bindingsByPlot[plot] = binding
-	applyCropVisibility(binding, plot:GetAttribute("CropState"))
+	applyAppearance(binding, resolveAppearance(definition, plot))
 
-	binding.connection = plot:GetAttributeChangedSignal("CropState"):Connect(function()
-		applyCropVisibility(binding, plot:GetAttribute("CropState"))
+	binding.cropStateConnection = plot:GetAttributeChangedSignal("CropState"):Connect(function()
+		refreshPlotVisual(plot, definition)
+	end)
+
+	binding.visualStageConnection = plot:GetAttributeChangedSignal("VisualGrowthStage"):Connect(function()
+		refreshPlotVisual(plot, definition)
+	end)
+
+	binding.ancestryConnection = plot.AncestryChanged:Connect(function(_, parent)
+		if parent == nil then
+			unbindPlot(plot)
+		end
 	end)
 end
 
@@ -92,8 +240,8 @@ function CropVisualService:Initialize()
 	end
 
 	for _, descendant in farmRoot:GetDescendants() do
-		if descendant:GetAttribute("CropType") == "Corn" then
-			bindCornPlot(descendant)
+		if type(descendant:GetAttribute("CropType")) == "string" then
+			bindPlot(descendant)
 		end
 	end
 

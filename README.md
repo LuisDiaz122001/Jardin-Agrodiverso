@@ -32,7 +32,7 @@ Roblox Studio
 
 `default.project.json` sincroniza `src/ReplicatedStorage`, `src/ServerScriptService` y `src/StarterPlayer`. No sincroniza `Workspace`; por tanto, las parcelas, prompts y modelos visuales se administran directamente en Roblox Studio. Esta separación evita que una sincronización de código reemplace accidentalmente el mapa.
 
-`Main.server.lua` es el punto de entrada del servidor. Inicializa, en orden, PlayerData, las interacciones de parcela y la capa visual de cultivos.
+`Main.server.lua` es el punto de entrada del servidor. Inicializa, en orden, PlayerData, las interacciones de parcela y la capa visual de cultivos. `FarmingService` permanece como autoridad del gameplay de cultivo; `CropVisualService` solo presenta el estado. `CropCatalog` concentra la definición de cada cultivo para no duplicar reglas entre ambos.
 
 ## Estructura del proyecto
 
@@ -50,6 +50,7 @@ Jardín Agrodiverso/
             ├── Seeds/
             │   └── SeedService.lua
             └── Farming/
+                ├── CropCatalog.lua
                 ├── FarmingService.lua
                 ├── PlotInteractionService.lua
                 └── CropVisualService.lua
@@ -87,7 +88,7 @@ CornPlot
     └── Leaf2
 ```
 
-Los servicios no crean ni eliminan estos objetos. `CropVisualService` solo cambia `Transparency` de los `BasePart` existentes dentro de `CornCrop`.
+Los servicios no crean ni eliminan estos objetos. `CropVisualService` solo ajusta `Transparency` y la escala (`ScaleTo`) del modelo existente `CornCrop`.
 
 ## Sistemas implementados
 
@@ -114,9 +115,17 @@ Los datos permanecen en memoria y son de uso exclusivo del servidor. **No existe
 | `AddSeeds(player, amount)` | Agrega solo cantidades enteras, positivas y finitas a un jugador con datos activos. |
 | `ConsumeSeed(player)` | Consume una semilla únicamente cuando el jugador tiene al menos una. |
 
+### CropCatalog
+
+`CropCatalog` es la definición compartida de cada cultivo. No es autoridad de sesión ni crea objetos del mapa: describe duración, recompensas, nombre del modelo visual existente y etapas visuales.
+
+`FarmingService` lee de este catálogo las reglas de gameplay. `CropVisualService` lee la apariencia. Añadir un cultivo posterior debe hacerse aquí, sin reescribir el ciclo de plantación ni la capa visual.
+
+Actualmente solo existe la definición `Corn`.
+
 ### FarmingService
 
-`FarmingService` coordina las reglas de cultivo en el servidor. Actualmente solo existe configuración para `CropType = "Corn"`:
+`FarmingService` es la autoridad del gameplay de cultivo. Planta, madura y cosecha según `CropState`; no delega esas decisiones en la capa visual. Actualmente solo existe configuración para `CropType = "Corn"`, leída desde `CropCatalog`:
 
 | Parámetro | Valor |
 | --- | ---: |
@@ -137,9 +146,9 @@ Ready
 Empty
 ```
 
-Al plantar, valida que el jugador siga activo, tenga datos de sesión, la parcela sea compatible y esté vacía. Después consume exactamente una semilla mediante `SeedService`. Al cosechar en `Ready`, suma `Coins` y `XP` a los datos del jugador; además, para `Corn`, evalúa `SeedDropChance` y, si se cumple, agrega exactamente una semilla mediante `SeedService:AddSeeds(player, 1)`. Finalmente devuelve el estado a `Empty`.
+Al plantar, valida que el jugador siga activo, tenga datos de sesión, la parcela sea compatible y esté vacía. Después consume exactamente una semilla mediante `SeedService`. Durante `Growing` publica `VisualGrowthStage` como señal de presentación derivada del mismo ciclo; esa señal no autoriza plantar ni cosechar. Al cosechar en `Ready`, suma `Coins` y `XP` a los datos del jugador; además, para `Corn`, evalúa `SeedDropChance` y, si se cumple, agrega exactamente una semilla mediante `SeedService:AddSeeds(player, 1)`. Finalmente devuelve el estado a `Empty` y `VisualGrowthStage` a `0`.
 
-El estado se almacena como atributos de la parcela: `CropState` y `FarmingCycle`. `FarmingCycle` identifica cada plantación y evita que un temporizador de un ciclo anterior modifique incorrectamente un ciclo posterior.
+El estado se almacena como atributos de la parcela: `CropState`, `FarmingCycle` y `VisualGrowthStage`. `FarmingCycle` identifica cada plantación y evita que un temporizador de un ciclo anterior, incluida una etapa visual, modifique incorrectamente un ciclo posterior.
 
 ### PlotInteractionService
 
@@ -149,15 +158,24 @@ El evento `Triggered` consulta `FarmingService:GetCropState(plot)` y decide la a
 
 ### CropVisualService
 
-`CropVisualService` recorre las parcelas de maíz dentro de `Workspace.Stations.Farm`, busca el modelo existente `CornCrop` y conserva en memoria la transparencia original de sus `BasePart`.
+`CropVisualService` es la capa visual. Recorre parcelas con `CropType` dentro de `Workspace.Stations.Farm`, resuelve el modelo configurado en `CropCatalog` (`CornCrop` para maíz) y conserva transparencia y escala originales. No crea modelos, piezas ni prompts, y no decide si se puede plantar o cosechar: si `CropState` es `Empty`, oculta el cultivo aunque `VisualGrowthStage` indique otra cosa.
 
-| Estado de parcela | Estado visual de `CornCrop` |
-| --- | --- |
-| `Empty` o sin `CropState` | Oculto (`Transparency = 1`) |
-| `Growing` | Visible (transparencia original) |
-| `Ready` | Visible (transparencia original) |
+Escucha `CropState` y `VisualGrowthStage`. Aplica escala con `ScaleTo` y muestra u oculta `BasePart` existentes según la etapa.
 
-El servicio inicializa el estado al arrancar y escucha `GetAttributeChangedSignal("CropState")`. No crea modelos, piezas ni prompts.
+#### VisualGrowthStage
+
+`VisualGrowthStage` es un atributo de parcela escrito por `FarmingService`. Representa la etapa visible; el estado lógico sigue siendo solo `Empty`, `Growing` o `Ready`.
+
+Etapas visuales actuales del maíz:
+
+| Etapa | `VisualGrowthStage` | `CropState` | Momento | Apariencia |
+| --- | ---: | --- | --- | --- |
+| Oculto | 0 | `Empty` | Parcela vacía | `CornCrop` oculto |
+| 1. Brote | 1 | `Growing` | Al plantar (0 s) | Solo `Stem`, escala 0.3 |
+| 2. Crecimiento | 2 | `Growing` | 15 s (50 % de 30 s) | Piezas visibles, escala 0.7 |
+| 3. Cultivo maduro | 3 | `Ready` | 30 s | Modelo completo, escala 1 |
+
+Las tres etapas visuales del maíz en cultivo activo son brote, crecimiento y maduro. La etapa 0 solo describe la parcela vacía.
 
 ## Flujo de cultivo
 
@@ -169,9 +187,9 @@ flowchart TD
     D -->|Empty| E[FarmingService:Plant]
     E --> F[SeedService:ConsumeSeed]
     F --> G[CropState = Growing]
-    G --> H[CropVisualService: CornCrop visible]
-    H --> I[30 segundos]
-    I --> J[CropState = Ready]
+    G --> H[VisualGrowthStage 1: brote]
+    H --> I[VisualGrowthStage 2: crecimiento]
+    I --> J[CropState = Ready y VisualGrowthStage 3]
     D -->|Growing| K[Sin acción]
     D -->|Ready| L[FarmingService:Harvest]
     L --> M[Coins +10 y XP +5]
@@ -179,7 +197,7 @@ flowchart TD
     Q -->|Sí| R[SeedService:AddSeeds player, 1]
     Q -->|No| N[CropState = Empty]
     R --> N
-    N --> O[CornCrop oculto]
+    N --> O[VisualGrowthStage 0: CornCrop oculto]
 ```
 
 El diagrama representa el flujo implementado en código. La existencia de evidencia registrada de pruebas de ejecución debe confirmarse por separado en la sección siguiente.
@@ -192,9 +210,10 @@ El diagrama representa el flujo implementado en código. La existencia de eviden
 | --- | --- |
 | PlayerData inicial | `PlayerDataService.lua` define Coins = 100, Level = 1, XP = 0 y Seeds = 0. |
 | Semillas | `SeedService.lua` implementa consulta, adición validada y consumo condicionado. |
-| Cultivo | `FarmingService.lua` implementa los estados, 30 segundos para Corn, recompensas, `SeedDropChance = 0.15` y limpieza posterior. |
+| Cultivo | `FarmingService.lua` implementa los estados, 30 segundos para Corn, recompensas, `SeedDropChance = 0.15`, `VisualGrowthStage` y limpieza posterior. |
+| Catálogo | `CropCatalog.lua` define gameplay y etapas visuales de `Corn`. |
 | Interacción física | `PlotInteractionService.lua` consulta `CropState` y delega en `FarmingService:Plant` o `FarmingService:Harvest`. |
-| Visualización | `CropVisualService.lua` sincroniza visibilidad con `CropState`. |
+| Visualización | `CropVisualService.lua` aplica etapas visuales sin alterar las reglas de cultivo. |
 
 ### Pendiente de verificación registrada
 
@@ -204,11 +223,13 @@ La interacción física de cosecha mediante el mismo `ProximityPrompt` fue proba
 
 También se validó manualmente que las semillas se consumen al plantar y pueden recuperarse mediante el drop aleatorio de cosecha. Esta prueba confirma el funcionamiento del mecanismo aleatorio y la integración con `SeedService`, pero no constituye una demostración estadística exacta de la probabilidad del 15%.
 
+El crecimiento visual por etapas del maíz fue probado exitosamente en Roblox Studio. El ciclo completo funcionó: parcela vacía oculta; al plantar, brote (`VisualGrowthStage = 1`); durante `Growing`, etapa de crecimiento (`VisualGrowthStage = 2`); a los 30 segundos, cultivo maduro (`CropState = Ready`, `VisualGrowthStage = 3`); al cosechar, retorno a `Empty` con `CornCrop` oculto. La plantación, la cosecha, las recompensas y la obtención natural de semillas se mantuvieron compatibles con el comportamiento previo.
+
 - PlayerData: confirmar los cuatro valores iniciales al entrar un jugador.
 - SeedService: probar `AddSeeds(player, 5)` y `ConsumeSeed(player)`.
 - FarmingService por consola de servidor: agregar semilla, plantar, confirmar consumo, esperar 30 segundos, cosechar directamente y comprobar `Coins +10`, `XP +5`, retorno a `Empty` y el mecanismo de drop aleatorio de semillas.
 - Plantación física: activar el `ProximityPrompt` de `CornPlot` con una semilla disponible.
-- Visualización: comprobar que `CornCrop` se oculta en `Empty` y se muestra en `Growing` y `Ready`.
+- Visualización: comprobar las tres etapas del maíz (brote, crecimiento y maduro) y que `CornCrop` se oculta en `Empty`.
 
 La prueba directa de `Harvest` existe en la API del servicio y la cosecha mediante interacción física está implementada y fue probada exitosamente durante el desarrollo.
 
@@ -221,10 +242,12 @@ La prueba directa de `Harvest` existe en la API del servicio y la cosecha median
 | Arquitectura inicial de servidor | Implementada |
 | PlayerDataService | Implementado; prueba de ejecución pendiente de registro |
 | SeedService | Implementado; prueba de ejecución pendiente de registro |
-| FarmingService | Implementado; recompensas y drop aleatorio de semillas probados manualmente sin registro formal |
+| FarmingService | Implementado; recompensas, drop de semillas y autoridad de `CropState` probados manualmente sin registro formal |
+| CropCatalog | Implementado para `Corn`; base reutilizable para cultivos posteriores |
 | Plantación mediante ProximityPrompt | Implementada; prueba de ejecución pendiente de registro |
-| CropVisualService | Implementado; prueba de ejecución pendiente de registro |
-| Crecimiento `Growing → Ready` | Implementado; prueba de ejecución pendiente de registro |
+| CropVisualService | Implementado como capa visual; etapas del maíz probadas manualmente en Studio |
+| Crecimiento visual por etapas | Implementado; prueba manual exitosa en Roblox Studio |
+| Crecimiento `Growing → Ready` | Implementado; prueba manual exitosa junto con las etapas visuales |
 | Cosecha mediante interacción | Implementada; prueba manual exitosa sin registro formal |
 | Obtención natural de semillas | Implementada; validación funcional manual sin demostración estadística formal |
 | Banco de Semillas | Pendiente |
@@ -241,10 +264,11 @@ La prueba directa de `Harvest` existe en la API del servicio y la cosecha median
 
 Git está configurado para este proyecto. La rama principal es `main` y el remoto `origin` está configurado como `https://github.com/LuisDiaz122001/Jardin-Agrodiverso.git`.
 
-Los commits verificables registran la versión inicial, su documentación y la implementación de cosecha mediante `ProximityPrompt`. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
+Los commits verificables registran la versión inicial, su documentación, la cosecha mediante `ProximityPrompt`, la obtención natural de semillas y el crecimiento visual por etapas. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
 
 | Fecha | Commit | Mensaje |
 | --- | --- | --- |
+| 2026-09-11 | `7bbc04e` | `docs: actualiza documentación de obtención de semillas` |
 | 2026-09-11 | `4771ca9` | `feat: agrega obtencion natural de semillas` |
 | 2026-09-11 | `949e297` | `docs: actualiza historial de cambios` |
 | 2026-09-11 | `7d87c4e` | `feat: implementa cosecha mediante ProximityPrompt` |
@@ -343,12 +367,15 @@ local plot = workspace.Stations.Farm.CornPlot
 
 print(SeedService:AddSeeds(player, 1))
 print(FarmingService:Plant(player, plot))
-print(FarmingService:GetCropState(plot)) -- Growing
+print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Growing, 1
 
-task.wait(30)
-print(FarmingService:GetCropState(plot)) -- Ready
+task.wait(15)
+print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Growing, 2
+
+task.wait(15)
+print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Ready, 3
 print(FarmingService:Harvest(player, plot))
-print(FarmingService:GetCropState(plot)) -- Empty
+print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Empty, 0
 ```
 
 Después, repetir la plantación usando el `ProximityPrompt` con una semilla disponible, esperar el estado `Ready` y usar el mismo prompt para cosechar. Verificar `Coins +10`, `XP +5`, el retorno a `Empty`, que `CornCrop` se oculte y que, con `0` semillas, no sea posible plantar nuevamente. Registrar el resultado de estas pruebas antes de actualizar su evidencia formal en este documento.
@@ -357,7 +384,7 @@ Después, repetir la plantación usando el `ProximityPrompt` con una semilla dis
 
 1. Registrar y conservar evidencia de las pruebas de servidor, interacción física y visualización.
 2. Registrar evidencia formal reproducible de la cosecha y del drop aleatorio de semillas mediante `ProximityPrompt`.
-3. Definir los siguientes cultivos mediante configuraciones de FarmingService.
+3. Definir los siguientes cultivos mediante nuevas entradas en `CropCatalog`.
 4. Diseñar persistencia con DataStore dentro de la responsabilidad de PlayerDataService.
 5. Diseñar el Banco de Semillas como una etapa independiente, sin sustituir la autoridad actual de `SeedService`.
 6. Incorporar economía, inventario, UI, misiones, NPCs y sistemas agroecológicos solo como etapas separadas y solicitadas.
