@@ -15,6 +15,7 @@ type CropConfig = {
 	GrowthDuration: number,
 	CoinsReward: number,
 	XPReward: number,
+	SeedDropChance: number,
 }
 
 local CROP_CONFIGS: {[string]: CropConfig} = {
@@ -22,10 +23,12 @@ local CROP_CONFIGS: {[string]: CropConfig} = {
 		GrowthDuration = 30,
 		CoinsReward = 10,
 		XPReward = 5,
+		SeedDropChance = 0.15,
 	},
 }
 
 local FarmingService = {}
+local random = Random.new()
 
 local function getActivePlayerData(player: Player)
 	if not player:IsDescendantOf(Players) then
@@ -119,6 +122,11 @@ function FarmingService:Harvest(player: Player, plot: Instance): boolean
 
 	playerData.Coins += cropConfig.CoinsReward
 	playerData.XP += cropConfig.XPReward
+
+	if random:NextNumber() < cropConfig.SeedDropChance then
+		SeedService:AddSeeds(player, 1)
+	end
+
 	plot:SetAttribute("CropState", "Empty")
 
 	return true
