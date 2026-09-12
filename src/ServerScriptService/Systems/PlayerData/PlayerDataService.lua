@@ -10,6 +10,7 @@ export type PlayerData = {
 	Level: number,
 	XP: number,
 	Seeds: number,
+	Inventory: {[string]: number},
 }
 
 local DEFAULT_DATA: PlayerData = {
@@ -17,6 +18,7 @@ local DEFAULT_DATA: PlayerData = {
 	Level = 1,
 	XP = 0,
 	Seeds = 0,
+	Inventory = {},
 }
 
 local PlayerDataService = {}
@@ -30,6 +32,7 @@ local function createInitialData(): PlayerData
 		Level = DEFAULT_DATA.Level,
 		XP = DEFAULT_DATA.XP,
 		Seeds = DEFAULT_DATA.Seeds,
+		Inventory = {},
 	}
 end
 
