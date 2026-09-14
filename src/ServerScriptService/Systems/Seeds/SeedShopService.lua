@@ -4,6 +4,7 @@
 -- No mantiene datos de jugadores: PlayerDataService sigue siendo la autoridad.
 
 local PlayerDataService = require(script.Parent.Parent.PlayerData.PlayerDataService)
+local CurrencyService = require(script.Parent.Parent.Economy.CurrencyService)
 local SeedService = require(script.Parent.SeedService)
 
 export type SeedDefinition = {
@@ -66,14 +67,13 @@ function SeedShopService:CanAffordSeeds(player: Player, seedId: string, amount: 
 		return false
 	end
 
-	local playerData = PlayerDataService:GetPlayerData(player)
 	local totalCost = getPurchaseCost(seedDefinition, amount)
 
-	if not playerData or not totalCost then
+	if not totalCost then
 		return false
 	end
 
-	return playerData.Coins >= totalCost
+	return CurrencyService:CanAfford(player, totalCost)
 end
 
 function SeedShopService:BuySeeds(player: Player, seedId: string, amount: number): boolean
@@ -86,7 +86,7 @@ function SeedShopService:BuySeeds(player: Player, seedId: string, amount: number
 	local playerData = PlayerDataService:GetPlayerData(player)
 	local totalCost = getPurchaseCost(seedDefinition, amount)
 
-	if not playerData or not totalCost or playerData.Coins < totalCost then
+	if not playerData or not totalCost or not CurrencyService:CanAfford(player, totalCost) then
 		return false
 	end
 
@@ -95,8 +95,19 @@ function SeedShopService:BuySeeds(player: Player, seedId: string, amount: number
 		return false
 	end
 
-	playerData.Coins -= totalCost
-	PlayerDataService:SyncPlayerAttributes(player)
+	if not CurrencyService:RemoveCoins(player, totalCost) then
+		warn("SeedShopService no pudo completar el cobro; se revertirá la entrega de semillas.")
+
+		for _ = 1, amount do
+			if not SeedService:ConsumeSeedByItem(player, seedDefinition.ItemId) then
+				warn("SeedShopService no pudo revertir completamente la entrega de semillas.")
+				break
+			end
+		end
+
+		return false
+	end
+
 	return true
 end
 
