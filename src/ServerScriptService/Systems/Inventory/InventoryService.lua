@@ -55,6 +55,7 @@ function InventoryService:AddItem(player: Player, itemId: string, amount: number
 
 	if itemId == LEGACY_SEEDS_ITEM_ID then
 		playerData.Seeds += amount
+		playerData.Inventory[itemId] = playerData.Seeds
 	else
 		playerData.Inventory[itemId] = (playerData.Inventory[itemId] or 0) + amount
 	end
@@ -76,6 +77,11 @@ function InventoryService:RemoveItem(player: Player, itemId: string, amount: num
 
 	if itemId == LEGACY_SEEDS_ITEM_ID then
 		playerData.Seeds -= amount
+		if playerData.Seeds == 0 then
+			playerData.Inventory[itemId] = nil
+		else
+			playerData.Inventory[itemId] = playerData.Seeds
+		end
 	else
 		local remainingAmount = playerData.Inventory[itemId] - amount
 

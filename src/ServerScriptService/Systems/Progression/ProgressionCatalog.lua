@@ -6,4 +6,21 @@ local XP_REQUIREMENTS: {[number]: number} = {
 	[4] = 50,
 }
 
-return XP_REQUIREMENTS
+local ProgressionCatalog = {}
+
+function ProgressionCatalog.GetLevelForXP(xp: number): number
+	local level = 1
+
+	while XP_REQUIREMENTS[level + 1] ~= nil
+		and xp >= XP_REQUIREMENTS[level + 1] do
+		level += 1
+	end
+
+	return level
+end
+
+function ProgressionCatalog.GetXPRequirement(level: number): number?
+	return XP_REQUIREMENTS[level]
+end
+
+return ProgressionCatalog

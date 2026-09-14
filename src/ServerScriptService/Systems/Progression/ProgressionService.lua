@@ -23,14 +23,7 @@ local function getActivePlayerData(player: Player)
 end
 
 local function getLevelForXP(xp: number): number
-	local level = 1
-
-	while ProgressionCatalog[level + 1] ~= nil
-		and xp >= ProgressionCatalog[level + 1] do
-		level += 1
-	end
-
-	return level
+	return ProgressionCatalog.GetLevelForXP(xp)
 end
 
 function ProgressionService:AddXP(player: Player, amount: number): boolean
@@ -76,7 +69,7 @@ function ProgressionService:GetXPRequirement(level: number): number?
 		return nil
 	end
 
-	return ProgressionCatalog[level]
+	return ProgressionCatalog.GetXPRequirement(level)
 end
 
 return ProgressionService
