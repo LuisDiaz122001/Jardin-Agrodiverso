@@ -2,7 +2,7 @@
 
 ## 1. Descripción general
 
-**Jardín Agrodiverso** es un videojuego educativo en Roblox que representa un jardín agrodiverso mediante mecánicas de cultivo, inventario, semillas, recompensas y progresión futura.
+**Jardín Agrodiverso** es un videojuego educativo en Roblox que representa un jardín agrodiverso mediante mecánicas de cultivo, inventario, semillas, recompensas y progresión basada en XP.
 
 El código de servidor está escrito en Luau con `--!strict` y se sincroniza mediante Rojo. El mapa, las parcelas, los modelos visuales y los objetos físicos se administran manualmente en Roblox Studio.
 
@@ -17,7 +17,9 @@ PlayerDataService
         ↓
 InventoryService ← SeedService
         ↓
-FarmingService / SeedShopService
+FarmingService → ProgressionService
+        ↓
+SeedShopService
         ↓
 Player Attributes
         ↓
@@ -56,6 +58,9 @@ Jardín Agrodiverso/
             │   ├── SeedService.lua
             │   ├── SeedShopService.lua
             │   └── SeedShopInteractionService.lua
+            ├── Progression/
+            │   ├── ProgressionService.lua
+            │   └── ProgressionCatalog.lua
             └── Farming/
                 ├── CropCatalog.lua
                 ├── FarmingService.lua
@@ -89,13 +94,23 @@ Se incrementa al cosechar según la configuración del cultivo y se descuenta al
 
 Nivel inicial: `1`.
 
-El valor se muestra y se replica, pero todavía no existe una fórmula ni una mecánica que lo incremente automáticamente.
+El nivel se calcula automáticamente a partir de la XP acumulada total.
 
 ### XP
 
 Experiencia inicial: `0`.
 
-Se incrementa al cosechar según la configuración del cultivo. Todavía no existe un sistema de progresión basado en XP.
+La XP es acumulada total y no se reinicia al subir de nivel. Se incrementa al cosechar según la configuración del cultivo y `ProgressionService` calcula automáticamente el nivel correspondiente.
+
+Umbrales actuales:
+
+| Transición | XP acumulada requerida |
+| --- | ---: |
+| Nivel 1 → Nivel 2 | 10 |
+| Nivel 2 → Nivel 3 | 25 |
+| Nivel 3 → Nivel 4 | 50 |
+
+La configuración está preparada para agregar niveles posteriores y permite subir varios niveles si una recompensa supera varios umbrales.
 
 ### Seeds
 
@@ -284,12 +299,13 @@ FarmingService:Harvest(player, plot)
 
 1. Valida jugador, datos y estado.
 2. Agrega Coins según `CoinsReward`.
-3. Agrega XP según `XPReward`.
+3. Agrega XP mediante `ProgressionService:AddXP(player, cropDefinition.XPReward)`.
 4. Evalúa `SeedDropChance`.
 5. Si corresponde, agrega una semilla del mismo `SeedItemId`.
-6. Sincroniza los Attributes.
-7. Cambia `CropState` a `Empty`.
-8. Cambia `VisualGrowthStage` a `0`.
+6. Cambia `CropState` a `Empty`.
+7. Cambia `VisualGrowthStage` a `0`.
+
+`ProgressionService` actualiza la XP acumulada, calcula `Level` y sincroniza los Attributes mediante `PlayerDataService`. `FarmingService` conserva su sincronización final para Coins, semillas y demás Attributes.
 
 ### 10.5 Replantación
 
@@ -304,7 +320,36 @@ Las recompensas están configuradas en `CropCatalog`:
 | Corn | +10 | +5 |
 | Tomato | +15 | +8 |
 
-No existe todavía un `CurrencyService` ni un `ExperienceService`. Las modificaciones se realizan directamente sobre `PlayerData` desde los servicios actuales.
+Coins continúa siendo modificado directamente por `FarmingService` y `SeedShopService`; todavía no existe un `CurrencyService`.
+
+La progresión de XP está implementada en:
+
+- `src/ServerScriptService/Systems/Progression/ProgressionService.lua`
+- `src/ServerScriptService/Systems/Progression/ProgressionCatalog.lua`
+
+`FarmingService` ya no modifica directamente `PlayerData.XP`; utiliza `ProgressionService:AddXP()`.
+
+### 11.1 ProgressionService
+
+`ProgressionService` es un servicio server-side que:
+
+- Valida el jugador y las cantidades de XP.
+- Requiere cantidades enteras, positivas y finitas.
+- Añade XP acumulada total.
+- Calcula automáticamente el nivel.
+- Permite subir varios niveles en una sola operación.
+- Mantiene la XP acumulada al subir de nivel.
+- Mantiene el último nivel configurado cuando se supera el máximo actual.
+- Sincroniza `XP` y `Level` mediante `PlayerDataService`.
+
+API actual:
+
+- `AddXP(player, amount)`.
+- `GetLevel(player)`.
+- `GetXP(player)`.
+- `GetXPRequirement(level)`.
+
+`ProgressionCatalog` contiene únicamente los requisitos de XP por nivel.
 
 ## 12. Seed drops
 
@@ -491,7 +536,7 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 
 ## Estado actual del proyecto
 
-### COMPLETADO
+### IMPLEMENTADO Y OPERATIVO
 
 - Datos de jugador en memoria durante la sesión.
 - Inventario base por jugador.
@@ -501,6 +546,9 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 - Plantación, crecimiento, estado `Ready` y cosecha.
 - Flujo `Empty → Growing → Ready → Empty`.
 - Recompensas de Coins y XP configuradas.
+- Progresión de XP acumulada y niveles hasta el nivel 4.
+- Cálculo automático de nivel mediante `ProgressionService`.
+- Sincronización de XP y Level mediante Player Attributes.
 - Seed drops configurados.
 - Visuales por etapas para modelos existentes.
 - Interacción física con parcelas existentes.
@@ -510,29 +558,26 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 - Sincronización de Attributes para el HUD.
 - Inicialización de servicios en `Main.server.lua`.
 
-### FUNCIONAL PERO INCOMPLETO
+### IMPLEMENTADO — EN FASE DE AMPLIACIÓN
 
 - `PlayerDataService`: funciona en memoria, pero no guarda datos.
 - Coins: se obtienen y gastan, pero no existe una capa económica centralizada.
-- XP: se obtiene y muestra, pero no produce progresión.
-- Level: se muestra, pero permanece en el valor inicial.
+- Progresión: funciona con requisitos hasta el nivel 4 y está preparada para añadir más niveles.
 - HUD: muestra valores, pero no tiene barras, notificaciones ni UI interactiva.
 - Banco de Semillas: funciona mediante prompts, pero depende de objetos manuales y no tiene UI.
 - Parcelas: funcionan si existen antes de inicializar el servidor.
 - Visuales: funcionan si los modelos y piezas están correctamente configurados.
 
-### PREPARADO PERO NO IMPLEMENTADO
+### PLANIFICADO / ARQUITECTURA PREPARADA
 
 - Inventario ampliado para otros tipos de objetos.
 - Nuevos cultivos mediante entradas adicionales en `CropCatalog`.
 - Networking para una futura UI interactiva.
-- Progresión de XP y niveles usando los campos existentes.
 - Economía adicional sobre la base de Coins e inventario.
 
-### PENDIENTE
+### PRÓXIMAS FUNCIONALIDADES
 
 - Persistencia/DataStore.
-- Progresión real de niveles.
 - Misiones.
 - Economía completa.
 - Venta de cultivos.
@@ -547,10 +592,6 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 ### Persistencia/DataStore
 
 No existe carga, guardado, reintentos, migración ni versionado de datos.
-
-### Progresión real de niveles
-
-No existen umbrales de XP, fórmulas, subida automática de `Level` ni recompensas por nivel.
 
 ### Misiones
 
@@ -595,18 +636,12 @@ Este README ahora refleja que:
 - El Banco de Semillas tiene integración física mediante prompts.
 - `TomatoSeed` cuesta 8 Coins.
 - Los Attributes del HUD son parte de la sincronización actual.
+- La progresión de XP y niveles está implementada y operativa.
+- `ProgressionService.lua` y `ProgressionCatalog.lua` forman parte de la estructura actual.
 
 ## Próximos pasos
 
-El siguiente sistema previsto es implementar la **progresión real de XP y niveles**:
-
-1. Definir umbrales de XP.
-2. Procesar incrementos de nivel.
-3. Mantener `Level` bajo la autoridad del servidor.
-4. Actualizar los Attributes existentes para que el HUD refleje el nivel.
-5. Probar la progresión sin modificar la lógica actual de cultivos.
-
-Después se recomienda implementar, en este orden:
+La progresión real de XP y niveles está implementada y probada. El siguiente trabajo recomendado es:
 
 1. Economía adicional y venta de cultivos.
 2. Misiones basadas en eventos de agricultura, inventario y progresión.
