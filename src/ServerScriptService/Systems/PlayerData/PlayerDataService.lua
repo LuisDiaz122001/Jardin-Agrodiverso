@@ -49,12 +49,27 @@ end
 function PlayerDataService:CreatePlayerData(player: Player): PlayerData
 	local playerData = createInitialData()
 	dataByPlayer[player] = playerData
+	self:SyncPlayerAttributes(player)
 
 	return playerData
 end
 
 function PlayerDataService:GetPlayerData(player: Player): PlayerData?
 	return dataByPlayer[player]
+end
+
+function PlayerDataService:SyncPlayerAttributes(player: Player)
+	local playerData = dataByPlayer[player]
+
+	if not playerData then
+		return
+	end
+
+	player:SetAttribute("Coins", playerData.Coins)
+	player:SetAttribute("Level", playerData.Level)
+	player:SetAttribute("XP", playerData.XP)
+	player:SetAttribute("Seeds", playerData.Seeds)
+	player:SetAttribute("TomatoSeeds", playerData.Inventory["TomatoSeeds"] or 0)
 end
 
 function PlayerDataService:RemovePlayerData(player: Player)

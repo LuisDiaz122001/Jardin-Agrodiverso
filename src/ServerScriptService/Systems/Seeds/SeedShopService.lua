@@ -96,6 +96,7 @@ function SeedShopService:BuySeeds(player: Player, seedId: string, amount: number
 	end
 
 	playerData.Coins -= totalCost
+	PlayerDataService:SyncPlayerAttributes(player)
 	return true
 end
 

@@ -13,9 +13,30 @@ local SeedService = require(script.Parent.Parent.Seeds.SeedService)
 export type CropState = "Empty" | "Growing" | "Ready"
 
 type CropDefinition = CropCatalog.CropDefinition
+type PlayerData = PlayerDataService.PlayerData
 
 local FarmingService = {}
 local random = Random.new()
+local DEBUG_FARMING = false
+
+local function debugPlayerData(message: string, player: Player, playerData: PlayerData, seedItemId: string)
+	if not DEBUG_FARMING then
+		return
+	end
+
+	local seedCount = SeedService:GetSeedCountByItem(player, seedItemId)
+	print(
+		string.format(
+			"[FarmingDebug] %s | Player: %s | Coins: %d | XP: %d | %s: %d",
+			message,
+			player.Name,
+			playerData.Coins,
+			playerData.XP,
+			seedItemId,
+			seedCount
+		)
+	)
+end
 
 local function getActivePlayerData(player: Player)
 	if not player:IsDescendantOf(Players) then
@@ -149,8 +170,22 @@ function FarmingService:Plant(player: Player, plot: Instance): boolean
 		return false
 	end
 
+	debugPlayerData("Antes de plantar", player, playerData, cropDefinition.SeedItemId)
+
 	if not SeedService:ConsumeSeedByItem(player, cropDefinition.SeedItemId) then
 		return false
+	end
+
+	PlayerDataService:SyncPlayerAttributes(player)
+
+	if DEBUG_FARMING then
+		print(
+			string.format(
+				"[FarmingDebug] Semilla consumida | Player: %s | ItemId: %s | Cantidad: 1",
+				player.Name,
+				cropDefinition.SeedItemId
+			)
+		)
 	end
 
 	local farmingCycle = getNextFarmingCycle(plot)
@@ -158,6 +193,8 @@ function FarmingService:Plant(player: Player, plot: Instance): boolean
 	plot:SetAttribute("FarmingCycle", farmingCycle)
 	scheduleGrowth(plot, farmingCycle, cropDefinition)
 	plot:SetAttribute("CropState", "Growing")
+
+	debugPlayerData("Después de plantar", player, playerData, cropDefinition.SeedItemId)
 
 	return true
 end
@@ -170,6 +207,8 @@ function FarmingService:Harvest(player: Player, plot: Instance): boolean
 		return false
 	end
 
+	debugPlayerData("Antes de cosechar", player, playerData, cropDefinition.SeedItemId)
+
 	playerData.Coins += cropDefinition.CoinsReward
 	playerData.XP += cropDefinition.XPReward
 
@@ -177,8 +216,23 @@ function FarmingService:Harvest(player: Player, plot: Instance): boolean
 		SeedService:AddSeedsByItem(player, cropDefinition.SeedItemId, 1)
 	end
 
+	PlayerDataService:SyncPlayerAttributes(player)
+
+	if DEBUG_FARMING then
+		print(
+			string.format(
+				"[FarmingDebug] Recompensa de cosecha | Player: %s | Coins: +%d | XP: +%d",
+				player.Name,
+				cropDefinition.CoinsReward,
+				cropDefinition.XPReward
+			)
+		)
+	end
+
 	plot:SetAttribute("CropState", "Empty")
 	setVisualGrowthStage(plot, CropCatalog.GetEmptyVisualStageId())
+
+	debugPlayerData("Después de cosechar", player, playerData, cropDefinition.SeedItemId)
 
 	return true
 end

@@ -59,6 +59,7 @@ function InventoryService:AddItem(player: Player, itemId: string, amount: number
 		playerData.Inventory[itemId] = (playerData.Inventory[itemId] or 0) + amount
 	end
 
+	PlayerDataService:SyncPlayerAttributes(player)
 	return true
 end
 
@@ -85,6 +86,7 @@ function InventoryService:RemoveItem(player: Player, itemId: string, amount: num
 		end
 	end
 
+	PlayerDataService:SyncPlayerAttributes(player)
 	return true
 end
 

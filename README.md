@@ -1,40 +1,40 @@
 # Jardín Agrodiverso
 
-## Descripción
+## 1. Descripción general
 
-**Jardín Agrodiverso** es un proyecto educativo en Roblox que transforma un jardín agrodiverso escolar en una experiencia virtual interactiva y gamificada. La primera etapa implementa una base técnica de datos de jugador, semillas y cultivo de maíz, manteniendo el mapa físico en Roblox Studio y el código sincronizado desde el repositorio.
+**Jardín Agrodiverso** es un videojuego educativo en Roblox que representa un jardín agrodiverso mediante mecánicas de cultivo, inventario, semillas, recompensas y progresión futura.
 
-## Propósito educativo
+El código de servidor está escrito en Luau con `--!strict` y se sincroniza mediante Rojo. El mapa, las parcelas, los modelos visuales y los objetos físicos se administran manualmente en Roblox Studio.
 
-El proyecto busca conectar educación ambiental, gamificación, aprendizaje interactivo, prácticas agroecológicas, tecnología y desarrollo de competencias digitales. Su evolución debe priorizar mecánicas que ayuden a explorar y comprender el jardín sin afirmar experiencias educativas que aún no estén implementadas.
+La autoridad de los datos del jugador permanece en `PlayerDataService`. Las reglas de agricultura permanecen en `FarmingService`, la configuración de cultivos en `CropCatalog` y la presentación visual en `CropVisualService`.
 
-## Tecnologías
-
-| Tecnología | Uso actual |
-| --- | --- |
-| Roblox Studio | Administración del mapa, parcelas, modelos visuales y ejecución de pruebas. |
-| Luau | Implementación de servicios de servidor. |
-| Visual Studio Code | Edición del código fuente. |
-| Rojo 7.7.0 | Sincronización del código entre el repositorio y Roblox Studio. |
-| Git | Control de versiones configurado en la rama `main`, con remoto de GitHub. |
-
-## Arquitectura
-
-El proyecto separa explícitamente el código sincronizado del mapa construido en Studio:
+## 2. Arquitectura actual
 
 ```text
-Código:
-VS Code → Rojo → Roblox Studio
-
-Mapa:
-Roblox Studio
+PlayerDataService
+        ↓
+    PlayerData
+        ↓
+InventoryService ← SeedService
+        ↓
+FarmingService / SeedShopService
+        ↓
+Player Attributes
+        ↓
+HUD.client.lua
 ```
 
-`default.project.json` sincroniza `src/ReplicatedStorage`, `src/ServerScriptService` y `src/StarterPlayer`. No sincroniza `Workspace`; por tanto, las parcelas, prompts y modelos visuales se administran directamente en Roblox Studio. Esta separación evita que una sincronización de código reemplace accidentalmente el mapa.
+La lógica principal de juego se ejecuta en `ServerScriptService`. El HUD se ejecuta en el cliente, pero solo lee Attributes replicados por el servidor. El cliente no modifica Coins, XP, Level ni inventario.
 
-`Main.server.lua` es el punto de entrada del servidor. Inicializa, en orden, PlayerData, las interacciones de parcela y la capa visual de cultivos. `FarmingService` permanece como autoridad del gameplay de cultivo; `CropVisualService` solo presenta el estado. `CropCatalog` concentra la definición de cada cultivo para no duplicar reglas entre ambos. `InventoryService` centraliza las operaciones de objetos sobre el `PlayerData` del jugador, sin mantener un almacenamiento paralelo.
+`default.project.json` sincroniza:
 
-## Estructura del proyecto
+- `src/ReplicatedStorage` → `ReplicatedStorage`.
+- `src/ServerScriptService` → `ServerScriptService`.
+- `src/StarterPlayer` → `StarterPlayer.StarterPlayerScripts`.
+
+`Workspace` no se sincroniza mediante Rojo.
+
+## 3. Estructura real de carpetas y archivos
 
 ```text
 Jardín Agrodiverso/
@@ -42,6 +42,9 @@ Jardín Agrodiverso/
 ├── JardinAgrodiverso.rbxl
 ├── README.md
 └── src/
+    ├── ReplicatedStorage/
+    ├── StarterPlayer/
+    │   └── HUD.client.lua
     └── ServerScriptService/
         ├── Main.server.lua
         └── Systems/
@@ -51,7 +54,8 @@ Jardín Agrodiverso/
             │   └── InventoryService.lua
             ├── Seeds/
             │   ├── SeedService.lua
-            │   └── SeedShopService.lua
+            │   ├── SeedShopService.lua
+            │   └── SeedShopInteractionService.lua
             └── Farming/
                 ├── CropCatalog.lua
                 ├── FarmingService.lua
@@ -59,386 +63,556 @@ Jardín Agrodiverso/
                 └── CropVisualService.lua
 ```
 
-Las rutas de `ReplicatedStorage` y `StarterPlayer` están declaradas en la configuración de Rojo, aunque actualmente no contienen archivos fuente en esta revisión.
+## 4. PlayerData actual
 
-## Estructura del mapa
+`PlayerDataService` crea datos en memoria por jugador:
 
-El mapa no forma parte de `src`. La estructura relevante mantenida en Roblox Studio es:
+```lua
+{
+    Coins = 100,
+    Level = 1,
+    XP = 0,
+    Seeds = 0,
+    Inventory = {},
+}
+```
+
+Los datos se eliminan al salir el jugador. Actualmente no existe persistencia con DataStore.
+
+### Coins
+
+Moneda inicial: `100`.
+
+Se incrementa al cosechar según la configuración del cultivo y se descuenta al comprar semillas.
+
+### Level
+
+Nivel inicial: `1`.
+
+El valor se muestra y se replica, pero todavía no existe una fórmula ni una mecánica que lo incremente automáticamente.
+
+### XP
+
+Experiencia inicial: `0`.
+
+Se incrementa al cosechar según la configuración del cultivo. Todavía no existe un sistema de progresión basado en XP.
+
+### Seeds
+
+`Seeds` es el campo legado que almacena las semillas de Corn:
+
+```text
+PlayerData.Seeds
+```
+
+Se conserva para mantener compatibilidad con la agricultura y las APIs existentes.
+
+### Inventory
+
+Los demás objetos se almacenan por `itemId`:
+
+```text
+PlayerData.Inventory[itemId]
+```
+
+Con `DEV_MODE = true`, los jugadores nuevos reciben:
+
+```text
+PlayerData.Inventory["TomatoSeeds"] = 3
+```
+
+## 5. Player Attributes utilizados por el HUD
+
+`PlayerDataService:SyncPlayerAttributes(player)` publica únicamente estos Attributes:
+
+| Attribute | Fuente |
+| --- | --- |
+| `Coins` | `PlayerData.Coins` |
+| `Level` | `PlayerData.Level` |
+| `XP` | `PlayerData.XP` |
+| `Seeds` | `PlayerData.Seeds` |
+| `TomatoSeeds` | `PlayerData.Inventory["TomatoSeeds"]` |
+
+Los Attributes son una proyección para visualización. No son la fuente de verdad.
+
+## 6. InventoryService
+
+Archivo: `src/ServerScriptService/Systems/Inventory/InventoryService.lua`.
+
+Métodos:
+
+| Método | Función |
+| --- | --- |
+| `GetItemCount(player, itemId)` | Obtiene la cantidad del objeto. |
+| `AddItem(player, itemId, amount)` | Agrega unidades válidas. |
+| `RemoveItem(player, itemId, amount)` | Elimina unidades si hay suficientes. |
+| `HasItem(player, itemId, amount)` | Comprueba si hay suficientes unidades. |
+
+Valida identificadores no vacíos y cantidades positivas, enteras y finitas. Después de `AddItem` y `RemoveItem` exitosos sincroniza los Attributes del jugador.
+
+No existe un inventario global ni un almacenamiento separado de `PlayerData`.
+
+## 7. SeedService
+
+Archivo: `src/ServerScriptService/Systems/Seeds/SeedService.lua`.
+
+Mantiene la API compatible:
+
+- `GetSeedCount`
+- `AddSeeds`
+- `ConsumeSeed`
+
+También soporta semillas por identificador:
+
+- `GetSeedCountByItem`
+- `AddSeedsByItem`
+- `ConsumeSeedByItem`
+
+Todas las operaciones delegan en `InventoryService`.
+
+## 8. CropCatalog
+
+Archivo: `src/ServerScriptService/Systems/Farming/CropCatalog.lua`.
+
+`CropCatalog` contiene la configuración compartida de cada cultivo. Cada definición incluye:
+
+- `SeedItemId`.
+- `GrowthDuration`.
+- `CoinsReward`.
+- `XPReward`.
+- `SeedDropChance`.
+- `VisualModelName`.
+- Etapas visuales durante `Growing`.
+- Apariencia cuando está `Ready`.
+
+No crea objetos de Workspace ni contiene estado de jugadores.
+
+## 9. Cultivos actuales
+
+### Corn
+
+```text
+CropType: Corn
+SeedItemId: Seeds
+GrowthDuration: 30 segundos
+CoinsReward: 10
+XPReward: 5
+SeedDropChance: 0.15
+VisualModelName: CornCrop
+```
+
+### Tomato
+
+```text
+CropType: Tomato
+SeedItemId: TomatoSeeds
+GrowthDuration: 45 segundos
+CoinsReward: 15
+XPReward: 8
+SeedDropChance: 0.20
+VisualModelName: TomatoCrop
+```
+
+Ambos cultivos utilizan el mismo `FarmingService`; no existen servicios duplicados.
+
+## 10. Flujo de agricultura
+
+El flujo actual es:
+
+```text
+Empty → Plant → Growing → Ready → Harvest → Empty
+```
+
+### 10.1 Plantación
+
+`PlotInteractionService` detecta el `ProximityPrompt` de una parcela y consulta `CropState`.
+
+Si la parcela está `Empty`, llama:
+
+```lua
+FarmingService:Plant(player, plot)
+```
+
+`FarmingService`:
+
+1. Valida que el jugador esté activo.
+2. Obtiene `PlayerData`.
+3. Lee `CropType`.
+4. Obtiene la definición desde `CropCatalog`.
+5. Consume el `SeedItemId` configurado mediante `SeedService`.
+6. Incrementa `FarmingCycle`.
+7. Programa el crecimiento.
+8. Cambia `CropState` a `Growing`.
+
+Si no hay suficientes semillas, la plantación falla y no cambia el estado de la parcela.
+
+### 10.2 Crecimiento por etapas
+
+`FarmingService` programa las etapas mediante `task.delay`.
+
+Corn:
+
+- Etapa 1 inmediatamente.
+- Etapa 2 al 50% de 30 segundos.
+- Etapa 3 a los 30 segundos.
+
+Tomato:
+
+- Etapa 1 inmediatamente.
+- Etapa 2 al 50% de 45 segundos.
+- Etapa 3 a los 45 segundos.
+
+`VisualGrowthStage` es un atributo de la parcela. No autoriza por sí mismo ninguna acción de gameplay.
+
+### 10.3 Ready
+
+Al terminar `GrowthDuration`, `FarmingService` verifica que el ciclo siga vigente, publica la etapa visual final y cambia:
+
+```text
+CropState = Ready
+```
+
+### 10.4 Cosecha
+
+Cuando la parcela está `Ready`, `PlotInteractionService` llama:
+
+```lua
+FarmingService:Harvest(player, plot)
+```
+
+`FarmingService`:
+
+1. Valida jugador, datos y estado.
+2. Agrega Coins según `CoinsReward`.
+3. Agrega XP según `XPReward`.
+4. Evalúa `SeedDropChance`.
+5. Si corresponde, agrega una semilla del mismo `SeedItemId`.
+6. Sincroniza los Attributes.
+7. Cambia `CropState` a `Empty`.
+8. Cambia `VisualGrowthStage` a `0`.
+
+### 10.5 Replantación
+
+Al volver a `Empty`, el mismo prompt puede llamar nuevamente a `Plant` si el jugador tiene la semilla requerida.
+
+## 11. Recompensas de Coins y XP
+
+Las recompensas están configuradas en `CropCatalog`:
+
+| Cultivo | Coins | XP |
+| --- | ---: | ---: |
+| Corn | +10 | +5 |
+| Tomato | +15 | +8 |
+
+No existe todavía un `CurrencyService` ni un `ExperienceService`. Las modificaciones se realizan directamente sobre `PlayerData` desde los servicios actuales.
+
+## 12. Seed drops
+
+Cada cultivo tiene su propio `SeedDropChance`:
+
+| Cultivo | Semilla devuelta | Probabilidad configurada |
+| --- | --- | ---: |
+| Corn | `Seeds` | 15% |
+| Tomato | `TomatoSeeds` | 20% |
+
+El drop se aplica durante `FarmingService:Harvest` mediante `SeedService` e `InventoryService`.
+
+## 13. CropVisualService
+
+Archivo: `src/ServerScriptService/Systems/Farming/CropVisualService.lua`.
+
+Responsabilidades:
+
+- Buscar parcelas con atributo `CropType`.
+- Resolver la definición desde `CropCatalog`.
+- Buscar el modelo indicado por `VisualModelName`.
+- Ocultar el modelo cuando la parcela está `Empty`.
+- Ajustar escala y transparencia.
+- Reaccionar a `CropState` y `VisualGrowthStage`.
+
+No crea, elimina ni modifica la estructura de modelos. Los modelos deben existir previamente en Roblox Studio.
+
+## 14. PlotInteractionService
+
+Archivo: `src/ServerScriptService/Systems/Farming/PlotInteractionService.lua`.
+
+Busca `Workspace.Stations.Farm`, detecta `ProximityPrompt` descendientes y encuentra la parcela ascendiendo hasta un ancestro con atributo `CropType`.
+
+Conecta:
+
+- `Empty` → `FarmingService:Plant`.
+- `Growing` → sin acción.
+- `Ready` → `FarmingService:Harvest`.
+
+Evita conexiones duplicadas, pero solo registra prompts existentes durante `Initialize`.
+
+## 15. SeedShopService
+
+Archivo: `src/ServerScriptService/Systems/Seeds/SeedShopService.lua`.
+
+Es un servicio stateless que no mantiene datos de jugadores.
+
+API:
+
+- `GetSeedPrice(seedId)`.
+- `CanAffordSeeds(player, seedId, amount)`.
+- `BuySeeds(player, seedId, amount)`.
+
+Catálogo actual:
+
+| Semilla | ItemId | Precio |
+| --- | --- | ---: |
+| `CornSeed` | `Seeds` | 5 Coins |
+| `TomatoSeed` | `TomatoSeeds` | 8 Coins |
+
+La compra se valida en servidor, agrega la semilla mediante `SeedService`, descuenta Coins y sincroniza Attributes después de completarse.
+
+## 16. SeedShopInteractionService
+
+Archivo: `src/ServerScriptService/Systems/Seeds/SeedShopInteractionService.lua`.
+
+Busca:
+
+```text
+Workspace.Stations.SeedShop
+```
+
+Detecta `ProximityPrompt` descendientes y lee estos Attributes:
+
+- `SeedId`.
+- `PurchaseAmount`.
+
+Valida la configuración y llama desde servidor:
+
+```lua
+SeedShopService:BuySeeds(player, seedId, purchaseAmount)
+```
+
+Evita conexiones duplicadas.
+
+La interacción física requiere que el objeto `SeedShop` y sus prompts sean creados manualmente en Roblox Studio. La depuración de compras está actualmente activa mediante:
+
+```lua
+local DEBUG_SEED_SHOP = true
+```
+
+## 17. HUD.client.lua
+
+Archivo: `src/StarterPlayer/HUD.client.lua`.
+
+Crea programáticamente:
+
+```text
+PlayerGui
+└── JardinHUD
+    └── Panel
+        ├── CoinsLabel
+        ├── LevelLabel
+        ├── XPLabel
+        ├── SeedsLabel
+        └── TomatoSeedsLabel
+```
+
+Lee exclusivamente:
+
+```lua
+player:GetAttribute("Coins")
+player:GetAttribute("Level")
+player:GetAttribute("XP")
+player:GetAttribute("Seeds")
+player:GetAttribute("TomatoSeeds")
+```
+
+Usa `GetAttributeChangedSignal` para actualizar los textos.
+
+El panel está arriba a la derecha con:
+
+```lua
+panel.AnchorPoint = Vector2.new(1, 0)
+panel.Position = UDim2.new(1, -20, 0, 20)
+```
+
+El HUD no requiere `PlayerDataService`, no usa `RemoteEvents` y no puede modificar los datos del servidor.
+
+## 18. Integración actual de Main.server.lua
+
+Archivo: `src/ServerScriptService/Main.server.lua`.
+
+Inicializa en este orden:
+
+```text
+PlayerDataService
+SeedShopInteractionService
+PlotInteractionService
+CropVisualService
+```
+
+`InventoryService`, `SeedService` y `SeedShopService` no requieren inicialización porque funcionan como módulos sin estado global propio.
+
+## 19. Estado actual del Banco de Semillas
+
+El Banco de Semillas está implementado en dos capas:
+
+- API de compra en `SeedShopService`.
+- Integración física mediante `SeedShopInteractionService`.
+
+Está funcional si existen manualmente en Workspace:
 
 ```text
 Workspace
-├── Camera
-├── Terrain
-├── Map
-├── NPCs
-├── Spawn
-├── Stations
-│   └── Farm
-│       └── CornPlot
-├── SpawnLocation
-└── Baseplate
+└── Stations
+    └── SeedShop
+        ├── Prompt con SeedId = "CornSeed"
+        │   └── PurchaseAmount = 1
+        └── Prompt con SeedId = "TomatoSeed"
+            └── PurchaseAmount = 1
 ```
 
-Para el flujo de cultivo, `CornPlot` debe conservar los siguientes elementos creados y administrados en Studio:
+No existe todavía una UI de tienda, selección de cantidad ni catálogo visual.
 
-```text
-CornPlot
-├── CropType = "Corn"          (atributo)
-├── ProximityPrompt
-└── CornCrop                    (Model)
-    ├── Stem
-    ├── Leaf1
-    └── Leaf2
-```
+## DEV_MODE
 
-Los servicios no crean ni eliminan estos objetos. `CropVisualService` solo ajusta `Transparency` y la escala (`ScaleTo`) del modelo existente `CornCrop`.
-
-## Sistemas implementados
-
-### PlayerDataService
-
-`PlayerDataService` es la autoridad de los datos de jugador durante la sesión del servidor. Escucha `PlayerAdded` y `PlayerRemoving`, crea datos al entrar y los libera al salir.
-
-| Dato | Valor inicial |
-| --- | ---: |
-| Coins | 100 |
-| Level | 1 |
-| XP | 0 |
-| Seeds | 0 |
-| Inventory | `{}` |
-
-Los datos permanecen en memoria y son de uso exclusivo del servidor. **No existe persistencia con DataStore**; al terminar la sesión, los datos se eliminan.
-
-### InventoryService
-
-`InventoryService` es la capa responsable de las operaciones del inventario durante la sesión. Obtiene los datos mediante `PlayerDataService:GetPlayerData(player)` y almacena los objetos nuevos en `PlayerData.Inventory`, un diccionario por jugador indexado por `itemId`. No existe un inventario global ni un segundo almacenamiento independiente.
-
-| Método | Comportamiento |
-| --- | --- |
-| `GetItemCount(player, itemId)` | Devuelve la cantidad del objeto o `0` si no existe o no hay datos activos. |
-| `AddItem(player, itemId, amount)` | Agrega una cantidad entera, positiva y finita al inventario del jugador. |
-| `RemoveItem(player, itemId, amount)` | Elimina objetos solo si el jugador tiene unidades suficientes; devuelve `false` en caso contrario. |
-| `HasItem(player, itemId, amount)` | Comprueba si el jugador posee al menos la cantidad solicitada. |
-
-`itemId` debe ser un identificador no vacío y sin espacios. Las cantidades negativas, cero, decimales, infinitas o no numéricas se rechazan.
-
-### SeedService
-
-`SeedService` conserva su API para la agricultura, pero delega sus operaciones en `InventoryService`. El campo legado `PlayerData.Seeds` sigue siendo el almacenamiento canónico de semillas; no se duplica dentro de `PlayerData.Inventory`. Cuando `InventoryService` recibe el identificador `"Seeds"`, enruta la operación al campo `Seeds`.
-
-| Operación | Comportamiento |
-| --- | --- |
-| `GetSeedCount(player)` | Devuelve la cantidad actual o `0` si no hay datos activos. |
-| `AddSeeds(player, amount)` | Agrega solo cantidades enteras, positivas y finitas a un jugador con datos activos. |
-| `ConsumeSeed(player)` | Consume una semilla únicamente cuando el jugador tiene al menos una. |
-
-### SeedShopService
-
-`SeedShopService` implementa el Banco de Semillas durante la sesión. El servicio es stateless: no mantiene datos globales de jugadores, saldos ni inventarios propios. Toda compra se valida y ejecuta en el servidor, usando `PlayerDataService` como autoridad de los datos.
-
-El catálogo actual de semillas es:
-
-| Identificador | `ItemId` | Precio |
-| --- | --- | ---: |
-| `CornSeed` | `Seeds` | 5 Coins |
-
-`CornSeed` conserva el `ItemId = "Seeds"` para mantener la compatibilidad con `PlayerData.Seeds`, `SeedService` y `FarmingService`.
-
-| Método | Comportamiento |
-| --- | --- |
-| `GetSeedPrice(seedId)` | Devuelve el precio configurado de la semilla o `nil` si el identificador no existe. |
-| `CanAffordSeeds(player, seedId, amount)` | Comprueba que el jugador tenga datos activos, la semilla exista, la cantidad sea válida y haya suficientes Coins. |
-| `BuySeeds(player, seedId, amount)` | Valida la compra, agrega todas las semillas mediante `SeedService` y descuenta los Coins únicamente cuando la operación puede completarse. |
-
-El `seedId` debe existir en el catálogo. La cantidad debe ser positiva, entera y finita; se rechazan valores cero, negativos, decimales, `NaN` e infinitos. Las compras inválidas o sin saldo suficiente no modifican Coins ni Seeds.
-
-`SeedShopService` consulta `PlayerDataService:GetPlayerData(player)` para validar el saldo y delega la adición de semillas en `SeedService:AddSeeds`. `SeedService` continúa utilizando `InventoryService`, que enruta el identificador compatible `"Seeds"` al campo canónico `PlayerData.Seeds`. No se crea un almacenamiento paralelo.
-
-### CropCatalog
-
-`CropCatalog` es la definición compartida de cada cultivo. No es autoridad de sesión ni crea objetos del mapa: describe duración, recompensas, nombre del modelo visual existente y etapas visuales.
-
-`FarmingService` lee de este catálogo las reglas de gameplay. `CropVisualService` lee la apariencia. Añadir un cultivo posterior debe hacerse aquí, sin reescribir el ciclo de plantación ni la capa visual.
-
-Actualmente solo existe la definición `Corn`.
-
-### FarmingService
-
-`FarmingService` es la autoridad del gameplay de cultivo. Planta, madura y cosecha según `CropState`; no delega esas decisiones en la capa visual. Actualmente solo existe configuración para `CropType = "Corn"`, leída desde `CropCatalog`:
-
-| Parámetro | Valor |
-| --- | ---: |
-| Duración de crecimiento | 30 segundos |
-| Recompensa de cosecha | 10 Coins |
-| Recompensa de experiencia | 5 XP |
-| Probabilidad de semilla al cosechar | 15% (`SeedDropChance = 0.15`) |
-
-Estados válidos de `CropState`:
-
-```text
-Empty
-↓ Plant
-Growing
-↓ 30 segundos
-Ready
-↓ Harvest
-Empty
-```
-
-Al plantar, valida que el jugador siga activo, tenga datos de sesión, la parcela sea compatible y esté vacía. Después consume exactamente una semilla mediante `SeedService`. Durante `Growing` publica `VisualGrowthStage` como señal de presentación derivada del mismo ciclo; esa señal no autoriza plantar ni cosechar. Al cosechar en `Ready`, suma `Coins` y `XP` a los datos del jugador; además, para `Corn`, evalúa `SeedDropChance` y, si se cumple, agrega exactamente una semilla mediante `SeedService:AddSeeds(player, 1)`. Finalmente devuelve el estado a `Empty` y `VisualGrowthStage` a `0`.
-
-El estado se almacena como atributos de la parcela: `CropState`, `FarmingCycle` y `VisualGrowthStage`. `FarmingCycle` identifica cada plantación y evita que un temporizador de un ciclo anterior, incluida una etapa visual, modifique incorrectamente un ciclo posterior.
-
-### PlotInteractionService
-
-`PlotInteractionService` es el puente entre el mapa y la lógica de cultivo. Busca `Workspace.Stations.Farm`, recorre los `ProximityPrompt` existentes e identifica su parcela ascendiendo hasta un ancestro con atributo `CropType`.
-
-El evento `Triggered` consulta `FarmingService:GetCropState(plot)` y decide la acción sin duplicar reglas de negocio: en `Empty` llama a `FarmingService:Plant(player, plot)`, en `Growing` no ejecuta ninguna acción y en `Ready` llama a `FarmingService:Harvest(player, plot)`. El servicio evita conexiones duplicadas si se inicializa más de una vez.
-
-### CropVisualService
-
-`CropVisualService` es la capa visual. Recorre parcelas con `CropType` dentro de `Workspace.Stations.Farm`, resuelve el modelo configurado en `CropCatalog` (`CornCrop` para maíz) y conserva transparencia y escala originales. No crea modelos, piezas ni prompts, y no decide si se puede plantar o cosechar: si `CropState` es `Empty`, oculta el cultivo aunque `VisualGrowthStage` indique otra cosa.
-
-Escucha `CropState` y `VisualGrowthStage`. Aplica escala con `ScaleTo` y muestra u oculta `BasePart` existentes según la etapa.
-
-#### VisualGrowthStage
-
-`VisualGrowthStage` es un atributo de parcela escrito por `FarmingService`. Representa la etapa visible; el estado lógico sigue siendo solo `Empty`, `Growing` o `Ready`.
-
-Etapas visuales actuales del maíz:
-
-| Etapa | `VisualGrowthStage` | `CropState` | Momento | Apariencia |
-| --- | ---: | --- | --- | --- |
-| Oculto | 0 | `Empty` | Parcela vacía | `CornCrop` oculto |
-| 1. Brote | 1 | `Growing` | Al plantar (0 s) | Solo `Stem`, escala 0.3 |
-| 2. Crecimiento | 2 | `Growing` | 15 s (50 % de 30 s) | Piezas visibles, escala 0.7 |
-| 3. Cultivo maduro | 3 | `Ready` | 30 s | Modelo completo, escala 1 |
-
-Las tres etapas visuales del maíz en cultivo activo son brote, crecimiento y maduro. La etapa 0 solo describe la parcela vacía.
-
-## Flujo de cultivo
-
-```mermaid
-flowchart TD
-    A[Jugador] --> B[ProximityPrompt existente]
-    B --> C[PlotInteractionService]
-    C --> D{CropState}
-    D -->|Empty| E[FarmingService:Plant]
-    E --> F[SeedService:ConsumeSeed]
-    F --> G[CropState = Growing]
-    G --> H[VisualGrowthStage 1: brote]
-    H --> I[VisualGrowthStage 2: crecimiento]
-    I --> J[CropState = Ready y VisualGrowthStage 3]
-    D -->|Growing| K[Sin acción]
-    D -->|Ready| L[FarmingService:Harvest]
-    L --> M[Coins +10 y XP +5]
-    M --> Q{SeedDropChance: 15%}
-    Q -->|Sí| R[SeedService:AddSeeds player, 1]
-    Q -->|No| N[CropState = Empty]
-    R --> N
-    N --> O[VisualGrowthStage 0: CornCrop oculto]
-```
-
-El diagrama representa el flujo implementado en código. La existencia de evidencia registrada de pruebas de ejecución debe confirmarse por separado en la sección siguiente.
-
-## Pruebas realizadas
-
-### Verificado directamente en código
-
-| Área | Evidencia técnica |
-| --- | --- |
-| PlayerData inicial | `PlayerDataService.lua` define Coins = 100, Level = 1, XP = 0 y Seeds = 0. |
-| Semillas | `SeedService.lua` implementa consulta, adición validada y consumo condicionado. |
-| Cultivo | `FarmingService.lua` implementa los estados, 30 segundos para Corn, recompensas, `SeedDropChance = 0.15`, `VisualGrowthStage` y limpieza posterior. |
-| Catálogo | `CropCatalog.lua` define gameplay y etapas visuales de `Corn`. |
-| Interacción física | `PlotInteractionService.lua` consulta `CropState` y delega en `FarmingService:Plant` o `FarmingService:Harvest`. |
-| Visualización | `CropVisualService.lua` aplica etapas visuales sin alterar las reglas de cultivo. |
-
-### Pendiente de verificación registrada
-
-Durante el desarrollo se realizaron pruebas manuales en Roblox Studio para validar PlayerDataService, SeedService, FarmingService, el ciclo de cultivo y la visualización del cultivo. Sin embargo, estas pruebas no cuentan actualmente con registros externos, capturas ni evidencia conservada dentro del repositorio. Por ello, deben considerarse pruebas de desarrollo y no evidencia formal reproducible; deberán repetirse y registrarse formalmente cuando corresponda.
-
-La interacción física de cosecha mediante el mismo `ProximityPrompt` fue probada exitosamente en Roblox Studio. Con la parcela en `Ready`, la interacción delegó en `FarmingService:Harvest(player, plot)`, otorgó `10 Coins` y `5 XP`, devolvió la parcela a `Empty` y ocultó `CornCrop`. Tras quedar con `0` semillas, la parcela no permitió una nueva plantación.
-
-También se validó manualmente que las semillas se consumen al plantar y pueden recuperarse mediante el drop aleatorio de cosecha. Esta prueba confirma el funcionamiento del mecanismo aleatorio y la integración con `SeedService`, pero no constituye una demostración estadística exacta de la probabilidad del 15%.
-
-El crecimiento visual por etapas del maíz fue probado exitosamente en Roblox Studio. El ciclo completo funcionó: parcela vacía oculta; al plantar, brote (`VisualGrowthStage = 1`); durante `Growing`, etapa de crecimiento (`VisualGrowthStage = 2`); a los 30 segundos, cultivo maduro (`CropState = Ready`, `VisualGrowthStage = 3`); al cosechar, retorno a `Empty` con `CornCrop` oculto. La plantación, la cosecha, las recompensas y la obtención natural de semillas se mantuvieron compatibles con el comportamiento previo.
-
-- PlayerData: confirmar los cuatro valores iniciales al entrar un jugador.
-- SeedService: probar `AddSeeds(player, 5)` y `ConsumeSeed(player)`.
-- FarmingService por consola de servidor: agregar semilla, plantar, confirmar consumo, esperar 30 segundos, cosechar directamente y comprobar `Coins +10`, `XP +5`, retorno a `Empty` y el mecanismo de drop aleatorio de semillas.
-- Plantación física: activar el `ProximityPrompt` de `CornPlot` con una semilla disponible.
-- Visualización: comprobar las tres etapas del maíz (brote, crecimiento y maduro) y que `CornCrop` se oculta en `Empty`.
-
-La prueba directa de `Harvest` existe en la API del servicio y la cosecha mediante interacción física está implementada y fue probada exitosamente durante el desarrollo.
-
-## Estado del desarrollo
-
-| Sistema | Estado |
-| --- | --- |
-| Configuración Roblox Studio | Pendiente de verificación documental |
-| Configuración Rojo | Implementado en `default.project.json` |
-| Arquitectura inicial de servidor | Implementada |
-| PlayerDataService | Implementado; prueba de ejecución pendiente de registro |
-| SeedService | Implementado; prueba de ejecución pendiente de registro |
-| FarmingService | Implementado; recompensas, drop de semillas y autoridad de `CropState` probados manualmente sin registro formal |
-| CropCatalog | Implementado para `Corn`; base reutilizable para cultivos posteriores |
-| Plantación mediante ProximityPrompt | Implementada; prueba de ejecución pendiente de registro |
-| CropVisualService | Implementado como capa visual; etapas del maíz probadas manualmente en Studio |
-| Crecimiento visual por etapas | Implementado; prueba manual exitosa en Roblox Studio |
-| Crecimiento `Growing → Ready` | Implementado; prueba manual exitosa junto con las etapas visuales |
-| Cosecha mediante interacción | Implementada; prueba manual exitosa sin registro formal |
-| Obtención natural de semillas | Implementada; validación funcional manual sin demostración estadística formal |
-| Banco de Semillas | Implementado; catálogo de `CornSeed` a 5 Coins y compras validadas en servidor |
-| Economía completa | Pendiente |
-| Inventario | Implementado; objetos nuevos en `PlayerData.Inventory` y `Seeds` compatible mediante `InventoryService` |
-| Misiones | Pendiente |
-| NPCs | Pendiente |
-| Sistemas agroecológicos | Pendiente |
-| UI | Pendiente |
-| Tutorial | Pendiente |
-| Persistencia DataStore | Pendiente |
-
-## Historial de cambios
-
-Git está configurado para este proyecto. La rama principal es `main` y el remoto `origin` está configurado como `https://github.com/LuisDiaz122001/Jardin-Agrodiverso.git`.
-
-Los commits verificables registran la versión inicial, su documentación, la cosecha mediante `ProximityPrompt`, la obtención natural de semillas y el crecimiento visual por etapas. El historial anterior a la inicialización de Git no se reconstruye ni se atribuye a fechas no verificables.
-
-| Fecha | Commit | Mensaje |
-| --- | --- | --- |
-| 2026-09-12 | `7d81d2c` | `feat: implementa banco de semillas` |
-| 2026-09-11 | `83fbf84` | `feat: implementa inventario base` |
-| 2026-09-11 | `74a3921` | `feat: implementa crecimiento visual por etapas` |
-| 2026-09-11 | `7bbc04e` | `docs: actualiza documentación de obtención de semillas` |
-| 2026-09-11 | `4771ca9` | `feat: agrega obtencion natural de semillas` |
-| 2026-09-11 | `949e297` | `docs: actualiza historial de cambios` |
-| 2026-09-11 | `7d87c4e` | `feat: implementa cosecha mediante ProximityPrompt` |
-| 2026-09-11 | `062cfc6` | `docs: actualiza documentación y control de versiones` |
-| 2026-09-11 | `c951e7d` | `chore: inicializa Jardin Agrodiverso` |
-
-A partir de este commit, los cambios relevantes deben registrarse mediante commits descriptivos. El README resume hitos, pero el historial de Git es la evidencia principal de la evolución del código.
-
-## Cómo consultar el historial de cambios
-
-El historial de Git es la evidencia principal de la evolución del código. El README resume hitos relevantes, pero no reemplaza dicho historial.
-
-Revisar el estado antes de registrar cambios:
-
-```bash
-git status
-```
-
-```bash
-git log --oneline --date=short --pretty=format:"%h | %ad | %s"
-```
-
-Para revisar archivos modificados por cada commit:
-
-```bash
-git log --stat
-```
-
-Flujo recomendado:
-
-1. Realizar un cambio.
-2. Probarlo en Roblox Studio.
-3. Verificar que funciona.
-4. Revisar `git status`.
-5. Crear un commit descriptivo.
-6. Hacer `git push`.
-
-```bash
-git add .
-git commit -m "tipo: descripción del cambio"
-git push
-```
-
-Al actualizar esta sección, solo se deben registrar fechas y asociaciones de funcionalidades que puedan comprobarse mediante commits u otra evidencia conservada en el proyecto.
-
-## Reglas de desarrollo
-
-1. El código se desarrolla en VS Code.
-2. Rojo sincroniza el código con Roblox Studio.
-3. Workspace se administra directamente desde Roblox Studio.
-4. No modificar Workspace mediante Rojo sin autorización explícita.
-5. No modificar `default.project.json` sin revisar previamente las consecuencias.
-6. Los datos del jugador deben permanecer bajo `PlayerDataService`.
-7. Los servicios deben tener responsabilidades claras.
-8. Las interacciones del mapa deben pasar por servicios apropiados.
-9. Los objetos visuales existentes no deben recrearse innecesariamente mediante código.
-10. Cada sistema debe probarse antes de comenzar el siguiente.
-11. No introducir funcionalidades que no hayan sido solicitadas.
-12. Evitar mezclar presentación, datos y reglas de negocio en un único servicio.
-13. Registrar en Git los cambios relevantes con mensajes claros.
-14. No modificar las fechas ni el historial de Git para aparentar actividad.
-15. Mantener actualizado el historial de cambios con fechas verificables.
-16. Cuando una fecha o prueba no pueda comprobarse, indicarlo explícitamente en lugar de inventarla.
-
-## Cómo ejecutar el proyecto
-
-1. Abrir `JardinAgrodiverso.rbxl` en Roblox Studio.
-2. Verificar en Explorer la estructura de `Workspace.Stations.Farm` y los elementos requeridos de `CornPlot`.
-3. Desde la raíz del proyecto, iniciar Rojo con la configuración existente:
-
-   ```bash
-   rojo serve default.project.json
-   ```
-
-4. Conectar la sesión desde el complemento de Rojo en Roblox Studio.
-5. Ejecutar una sesión de prueba en Studio.
-
-## Cómo trabajar con Rojo
-
-- Editar únicamente el código que pertenece a `src` desde VS Code.
-- Mantener los objetos físicos del mapa, prompts y modelos visuales en Roblox Studio.
-- Verificar la conexión de Rojo antes de probar cambios de servidor.
-- No introducir `Workspace` en la configuración de Rojo sin una revisión explícita de impacto sobre el mapa.
-- Confirmar que `Main.server.lua` sigue siendo el punto de inicialización de los servicios de servidor.
-
-## Cómo probar los sistemas
-
-Las pruebas deben realizarse en una sesión de servidor de Roblox Studio, nunca desde código cliente.
+En `PlayerDataService`:
 
 ```lua
-local SeedService = require(game.ServerScriptService.Systems.Seeds.SeedService)
-local InventoryService = require(game.ServerScriptService.Systems.Inventory.InventoryService)
-local FarmingService = require(game.ServerScriptService.Systems.Farming.FarmingService)
-
-local player = game.Players:GetPlayers()[1]
-local plot = workspace.Stations.Farm.CornPlot
-
-print(InventoryService:GetItemCount(player, "Seeds"))
-print(InventoryService:AddItem(player, "Wood", 10))
-print(InventoryService:HasItem(player, "Wood", 10))
-print(InventoryService:RemoveItem(player, "Wood", 4))
-print(InventoryService:GetItemCount(player, "Wood"))
-print(InventoryService:RemoveItem(player, "Wood", 100))
-
-print(SeedService:AddSeeds(player, 1))
-print(FarmingService:Plant(player, plot))
-print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Growing, 1
-
-task.wait(15)
-print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Growing, 2
-
-task.wait(15)
-print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Ready, 3
-print(FarmingService:Harvest(player, plot))
-print(FarmingService:GetCropState(plot), FarmingService:GetVisualGrowthStage(plot)) -- Empty, 0
+local DEV_MODE = true
+local DEV_TOMATO_SEEDS = 3
 ```
 
-Después, repetir la plantación usando el `ProximityPrompt` con una semilla disponible, esperar el estado `Ready` y usar el mismo prompt para cosechar. Verificar `Coins +10`, `XP +5`, el retorno a `Empty`, que `CornCrop` se oculte y que, con `0` semillas, no sea posible plantar nuevamente. Registrar el resultado de estas pruebas antes de actualizar su evidencia formal en este documento.
+Cuando está activo, cada jugador nuevo recibe tres `TomatoSeeds` dentro de `PlayerData.Inventory`.
+
+Cuando se desactive:
+
+```lua
+local DEV_MODE = false
+```
+
+los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógica de agricultura, precios ni recompensas.
+
+## Estado actual del proyecto
+
+### COMPLETADO
+
+- Datos de jugador en memoria durante la sesión.
+- Inventario base por jugador.
+- Compatibilidad de `Seeds` con `PlayerData.Seeds`.
+- `SeedService` para semillas por `itemId`.
+- `CropCatalog` con Corn y Tomato.
+- Plantación, crecimiento, estado `Ready` y cosecha.
+- Flujo `Empty → Growing → Ready → Empty`.
+- Recompensas de Coins y XP configuradas.
+- Seed drops configurados.
+- Visuales por etapas para modelos existentes.
+- Interacción física con parcelas existentes.
+- API del Banco de Semillas.
+- Integración física del Banco de Semillas mediante prompts configurados.
+- HUD básico de solo lectura.
+- Sincronización de Attributes para el HUD.
+- Inicialización de servicios en `Main.server.lua`.
+
+### FUNCIONAL PERO INCOMPLETO
+
+- `PlayerDataService`: funciona en memoria, pero no guarda datos.
+- Coins: se obtienen y gastan, pero no existe una capa económica centralizada.
+- XP: se obtiene y muestra, pero no produce progresión.
+- Level: se muestra, pero permanece en el valor inicial.
+- HUD: muestra valores, pero no tiene barras, notificaciones ni UI interactiva.
+- Banco de Semillas: funciona mediante prompts, pero depende de objetos manuales y no tiene UI.
+- Parcelas: funcionan si existen antes de inicializar el servidor.
+- Visuales: funcionan si los modelos y piezas están correctamente configurados.
+
+### PREPARADO PERO NO IMPLEMENTADO
+
+- Inventario ampliado para otros tipos de objetos.
+- Nuevos cultivos mediante entradas adicionales en `CropCatalog`.
+- Networking para una futura UI interactiva.
+- Progresión de XP y niveles usando los campos existentes.
+- Economía adicional sobre la base de Coins e inventario.
+
+### PENDIENTE
+
+- Persistencia/DataStore.
+- Progresión real de niveles.
+- Misiones.
+- Economía completa.
+- Venta de cultivos.
+- UI interactiva.
+- NPCs con lógica.
+- `RemoteEvents` y `RemoteFunctions`.
+- Detección dinámica de parcelas y prompts.
+- Pruebas automatizadas.
+
+## Sistemas todavía pendientes
+
+### Persistencia/DataStore
+
+No existe carga, guardado, reintentos, migración ni versionado de datos.
+
+### Progresión real de niveles
+
+No existen umbrales de XP, fórmulas, subida automática de `Level` ni recompensas por nivel.
+
+### Misiones
+
+No existen definiciones, progreso, objetivos, recompensas ni UI de misiones.
+
+### Economía completa
+
+No existen mercado, venta de cultivos, herramientas, recursos económicos ni historial de transacciones.
+
+### Venta de cultivos
+
+La cosecha solo otorga Coins y XP según `CropCatalog`; no se almacenan cultivos cosechados ni se pueden vender.
+
+### UI interactiva
+
+El HUD actual solo muestra información. No existen menús, botones de compra, inventario visual ni notificaciones.
+
+### NPCs con lógica
+
+Aunque el mapa puede contener modelos NPC, no existen servicios de diálogo, interacción o comportamiento de NPC.
+
+### RemoteEvents/RemoteFunctions
+
+No existen remotos. El HUD no los necesita porque usa Attributes; serán necesarios para futuras acciones iniciadas desde UI.
+
+### Detección dinámica de parcelas/prompts
+
+Los servicios recorren objetos durante `Initialize`. No escuchan `DescendantAdded` para conectar objetos creados posteriormente.
+
+### Pruebas automatizadas
+
+La validación depende de pruebas manuales en Roblox Studio. No existe un runner automatizado.
+
+## Discrepancias documentales corregidas en esta versión
+
+Este README ahora refleja que:
+
+- Existen Corn y Tomato.
+- Existe `SeedShopInteractionService.lua`.
+- Existe `HUD.client.lua`.
+- `Main.server.lua` inicializa cuatro servicios.
+- El Banco de Semillas tiene integración física mediante prompts.
+- `TomatoSeed` cuesta 8 Coins.
+- Los Attributes del HUD son parte de la sincronización actual.
 
 ## Próximos pasos
 
-1. Registrar y conservar evidencia de las pruebas de servidor, interacción física y visualización.
-2. Registrar evidencia formal reproducible de la cosecha y del drop aleatorio de semillas mediante `ProximityPrompt`.
-3. Definir los siguientes cultivos mediante nuevas entradas en `CropCatalog`.
-4. Diseñar persistencia con DataStore dentro de la responsabilidad de PlayerDataService.
-5. Diseñar el Banco de Semillas como una etapa independiente, sin sustituir la autoridad actual de `SeedService`.
-6. Incorporar economía, inventario, UI, misiones, NPCs y sistemas agroecológicos solo como etapas separadas y solicitadas.
+El siguiente sistema previsto es implementar la **progresión real de XP y niveles**:
 
-## Documentación futura
+1. Definir umbrales de XP.
+2. Procesar incrementos de nivel.
+3. Mantener `Level` bajo la autoridad del servidor.
+4. Actualizar los Attributes existentes para que el HUD refleje el nivel.
+5. Probar la progresión sin modificar la lógica actual de cultivos.
 
-**Pendiente de documentación:** documentar resultados de pruebas manuales con evidencia conservada; asociar nuevos hitos a commits verificables; y confirmar periódicamente desde Studio que la estructura del mapa coincide con esta referencia.
+Después se recomienda implementar, en este orden:
+
+1. Economía adicional y venta de cultivos.
+2. Misiones basadas en eventos de agricultura, inventario y progresión.
+3. Persistencia/DataStore una vez estabilizado el esquema de datos y las recompensas.
+4. UI interactiva y networking seguro.
+5. Detección dinámica de parcelas y prompts.
+6. Pruebas automatizadas.
+
+No se debe presentar ninguna de estas etapas como implementada hasta que exista código probado para ellas.
