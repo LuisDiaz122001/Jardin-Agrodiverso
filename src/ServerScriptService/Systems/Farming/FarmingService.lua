@@ -8,6 +8,7 @@ local Players = game:GetService("Players")
 
 local CropCatalog = require(script.Parent.CropCatalog)
 local PlayerDataService = require(script.Parent.Parent.PlayerData.PlayerDataService)
+local ProgressionService = require(script.Parent.Parent.Progression.ProgressionService)
 local SeedService = require(script.Parent.Parent.Seeds.SeedService)
 
 export type CropState = "Empty" | "Growing" | "Ready"
@@ -210,7 +211,7 @@ function FarmingService:Harvest(player: Player, plot: Instance): boolean
 	debugPlayerData("Antes de cosechar", player, playerData, cropDefinition.SeedItemId)
 
 	playerData.Coins += cropDefinition.CoinsReward
-	playerData.XP += cropDefinition.XPReward
+	ProgressionService:AddXP(player, cropDefinition.XPReward)
 
 	if random:NextNumber() < cropDefinition.SeedDropChance then
 		SeedService:AddSeedsByItem(player, cropDefinition.SeedItemId, 1)
