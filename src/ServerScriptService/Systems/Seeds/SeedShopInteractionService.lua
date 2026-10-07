@@ -9,7 +9,7 @@ local SeedShopService = require(script.Parent.SeedShopService)
 
 local SeedShopInteractionService = {}
 
-local DEBUG_SEED_SHOP = true
+local DEBUG_SEED_SHOP = false
 local initialized = false
 local connectedPrompts: {[ProximityPrompt]: RBXScriptConnection} = {}
 
