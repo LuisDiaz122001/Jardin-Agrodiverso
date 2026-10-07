@@ -346,14 +346,20 @@ function PlayerDataService:Initialize()
 
 		for _, userId in userIds do
 			local player = activePlayersByUserId[userId]
+			local closingState = closingStatesByUserId[userId]
 
-			if player then
-				local closingState = closingStatesByUserId[userId]
+			if closingState and not closingState.Completed then
+				table.insert(closingEvents, closingState.Event.Event)
+			elseif player then
+				closePlayerSession(self, player)
+			else
+				local released = DataStoreRepository:Release(userId)
 
-				if closingState and not closingState.Completed then
-					table.insert(closingEvents, closingState.Event.Event)
-				else
-					closePlayerSession(self, player)
+				if not released then
+					warn(string.format(
+						"PlayerDataService no pudo liberar la sesión de UserId %d durante BindToClose.",
+						userId
+					))
 				end
 			end
 		end
