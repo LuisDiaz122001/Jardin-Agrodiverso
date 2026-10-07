@@ -12,7 +12,7 @@ local DataValidator = require(script.Parent.DataValidator)
 local ProgressionCatalog = require(script.Parent.Parent.Progression.ProgressionCatalog)
 
 -- Modo de desarrollo: no forma parte del contrato persistente.
-local DEV_MODE = true
+local DEV_MODE = false
 local DEV_TOMATO_SEEDS = 3
 local AUTOSAVE_INTERVAL = 5 * 60
 
@@ -33,6 +33,7 @@ local statusByPlayer: {[Player]: LoadStatus} = {}
 local repairedByPlayer: {[Player]: boolean} = {}
 local devTomatoSeedsByPlayer: {[Player]: number} = {}
 local activePlayersByUserId: {[number]: Player} = {}
+local loadingByUserId: {[number]: boolean} = {}
 type ClosingState = {
 	Event: BindableEvent,
 	Completed: boolean,
@@ -181,6 +182,15 @@ function PlayerDataService:SavePlayerData(player: Player): boolean
 end
 
 local function loadPlayerData(self: typeof(PlayerDataService), player: Player)
+	local userId = player.UserId
+
+	if loadingByUserId[userId] then
+		return
+	end
+
+	loadingByUserId[userId] = true
+
+	local success, errorMessage = xpcall(function()
 	statusByPlayer[player] = "Loading"
 
 	local loaded, rawData, isNewData, loadError = DataStoreRepository:Load(player.UserId)
@@ -215,6 +225,22 @@ local function loadPlayerData(self: typeof(PlayerDataService), player: Player)
 	statusByPlayer[player] = "Loaded"
 	activePlayersByUserId[player.UserId] = player
 	self:SyncPlayerAttributes(player)
+	end, function(errorObject)
+		return debug.traceback(tostring(errorObject), 2)
+	end)
+
+	loadingByUserId[userId] = nil
+
+	if not success then
+		warn(string.format(
+			"PlayerDataService encontró un error inesperado al cargar a %s: %s",
+			player.Name,
+			errorMessage or "error desconocido"
+		))
+
+		DataStoreRepository:Release(userId)
+		setFailed(player, "error inesperado durante la carga")
+	end
 end
 
 function PlayerDataService:RemovePlayerData(player: Player)
