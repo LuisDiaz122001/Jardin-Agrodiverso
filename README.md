@@ -70,7 +70,7 @@ Jardín Agrodiverso/
 
 ## 4. PlayerData actual
 
-`PlayerDataService` crea datos en memoria por jugador:
+`PlayerDataService` crea y administra datos por jugador durante la sesión, y los integra con persistencia mediante `DataStoreRepository`:
 
 ```lua
 {
@@ -82,7 +82,27 @@ Jardín Agrodiverso/
 }
 ```
 
-Los datos se eliminan al salir el jugador. Actualmente no existe persistencia con DataStore.
+Los datos se cargan y guardan mediante DataStore. La persistencia actual incluye migración, validación, reintentos, versionado, autosave y session lock.
+
+### Persistencia y ciclo de sesión
+
+`DataStoreRepository` utiliza los siguientes DataStores:
+
+- `JardinAgrodiverso_PlayerData_v1` para PlayerData.
+- `JardinAgrodiverso_SessionLocks_v1` para session locks.
+
+El sistema mantiene un session lock por `UserId`, con ownership mediante token, heartbeat y una duración de 120 segundos. `PlayerDataService` guarda los datos durante `PlayerRemoving` y coordina los cierres de `PlayerRemoving` y `BindToClose`.
+
+Las pruebas en Roblox Studio validaron:
+
+- carga y guardado de PlayerData;
+- persistencia de Coins, XP e inventario;
+- adquisición y liberación del session lock;
+- autosave;
+- salida y reentrada inmediata del mismo jugador;
+- ciclo de salida y reentrada del mismo jugador dentro del mismo servidor.
+
+`ClosingState` coordina los cierres concurrentes por `UserId`. Después de un `Release()` exitoso, el estado de cierre se limpia para permitir un nuevo ciclo de sesión del mismo `UserId`. Esta corrección fue validada junto con la persistencia y el session lock.
 
 ### Coins
 
@@ -320,7 +340,7 @@ Las recompensas están configuradas en `CropCatalog`:
 | Corn | +10 | +5 |
 | Tomato | +15 | +8 |
 
-Coins continúa siendo modificado directamente por `FarmingService` y `SeedShopService`; todavía no existe un `CurrencyService`.
+Coins se modifica mediante `CurrencyService`, que centraliza las operaciones de economía utilizadas por `FarmingService` y `SeedShopService`.
 
 La progresión de XP está implementada en:
 
@@ -538,13 +558,20 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 
 ### IMPLEMENTADO Y OPERATIVO
 
-- Datos de jugador en memoria durante la sesión.
+- Vertical slice jugable completo.
+- PlayerData con persistencia mediante DataStore.
+- Session lock validado.
+- Autosave implementado y validado.
+- Ciclo de salida y reentrada del mismo jugador validado.
+- Coordinación de cierre mediante `ClosingState`, incluida la limpieza después de un `Release()` exitoso.
 - Inventario base por jugador.
 - Compatibilidad de `Seeds` con `PlayerData.Seeds`.
 - `SeedService` para semillas por `itemId`.
 - `CropCatalog` con Corn y Tomato.
+- Compra de semillas mediante el Banco de Semillas.
 - Plantación, crecimiento, estado `Ready` y cosecha.
 - Flujo `Empty → Growing → Ready → Empty`.
+- Consumo de semillas al plantar.
 - Recompensas de Coins y XP configuradas.
 - Progresión de XP acumulada y niveles hasta el nivel 4.
 - Cálculo automático de nivel mediante `ProgressionService`.
@@ -555,18 +582,17 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 - API del Banco de Semillas.
 - Integración física del Banco de Semillas mediante prompts configurados.
 - HUD básico de solo lectura.
-- Sincronización de Attributes para el HUD.
+- HUD mostrando los datos cargados y persistidos mediante Attributes.
 - Inicialización de servicios en `Main.server.lua`.
 
 ### IMPLEMENTADO — EN FASE DE AMPLIACIÓN
 
-- `PlayerDataService`: funciona en memoria, pero no guarda datos.
-- Coins: se obtienen y gastan, pero no existe una capa económica centralizada.
 - Progresión: funciona con requisitos hasta el nivel 4 y está preparada para añadir más niveles.
 - HUD: muestra valores, pero no tiene barras, notificaciones ni UI interactiva.
 - Banco de Semillas: funciona mediante prompts, pero depende de objetos manuales y no tiene UI.
 - Parcelas: funcionan si existen antes de inicializar el servidor.
 - Visuales: funcionan si los modelos y piezas están correctamente configurados.
+- Persistencia: el flujo principal está validado; deben mantenerse las pruebas finales después de cualquier cambio en el esquema o en el ciclo de sesión.
 
 ### PLANIFICADO / ARQUITECTURA PREPARADA
 
@@ -577,21 +603,26 @@ los jugadores nuevos no recibirán esas semillas gratuitas. No modifica la lógi
 
 ### PRÓXIMAS FUNCIONALIDADES
 
-- Persistencia/DataStore.
+- Revisión de `DEV_MODE` y de la configuración de desarrollo antes de la entrega final.
+- Completar y revisar los elementos del mapa en Roblox Studio.
+- Mejoras de UI e interacciones.
 - Misiones.
 - Economía completa.
 - Venta de cultivos.
 - UI interactiva.
 - NPCs con lógica.
+- Inventario avanzado para otros tipos de objetos.
 - `RemoteEvents` y `RemoteFunctions`.
 - Detección dinámica de parcelas y prompts.
 - Pruebas automatizadas.
 
 ## Sistemas todavía pendientes
 
-### Persistencia/DataStore
+### Configuración de desarrollo y mapa
 
-No existe carga, guardado, reintentos, migración ni versionado de datos.
+`DEV_MODE` continúa activo para facilitar las pruebas y entrega semillas iniciales de desarrollo a jugadores nuevos. Debe revisarse antes de la configuración final de la entrega.
+
+El mapa, sus parcelas, prompts, modelos visuales y elementos del Banco de Semillas se administran manualmente en Roblox Studio y deben completarse o revisarse de acuerdo con los nombres y Attributes esperados por los servicios.
 
 ### Misiones
 
@@ -629,9 +660,15 @@ La validación depende de pruebas manuales en Roblox Studio. No existe un runner
 
 Este README ahora refleja que:
 
+- El vertical slice jugable está funcional.
+- La persistencia con DataStore está implementada y validada.
+- El session lock y el autosave están implementados y validados.
+- La salida y reentrada del mismo jugador está validada.
+- `ClosingState` se limpia después de un cierre exitoso para permitir un nuevo ciclo de sesión del mismo `UserId`.
 - Existen Corn y Tomato.
 - Existe `SeedShopInteractionService.lua`.
 - Existe `HUD.client.lua`.
+- Existe `CurrencyService.lua`.
 - `Main.server.lua` inicializa cuatro servicios.
 - El Banco de Semillas tiene integración física mediante prompts.
 - `TomatoSeed` cuesta 8 Coins.
@@ -641,13 +678,16 @@ Este README ahora refleja que:
 
 ## Próximos pasos
 
-La progresión real de XP y niveles está implementada y probada. El siguiente trabajo recomendado es:
+La persistencia, el session lock, la agricultura, las recompensas, la progresión y el HUD están implementados y validados. El siguiente trabajo recomendado es:
 
-1. Economía adicional y venta de cultivos.
-2. Misiones basadas en eventos de agricultura, inventario y progresión.
-3. Persistencia/DataStore una vez estabilizado el esquema de datos y las recompensas.
-4. UI interactiva y networking seguro.
-5. Detección dinámica de parcelas y prompts.
-6. Pruebas automatizadas.
+1. Revisar `DEV_MODE` y la configuración de desarrollo.
+2. Completar y revisar los elementos del mapa en Roblox Studio.
+3. Mejorar la UI y las interacciones existentes.
+4. Implementar misiones y NPCs con lógica.
+5. Ampliar el inventario para otros tipos de objetos.
+6. Implementar venta de cultivos y economía adicional.
+7. Añadir networking para futuras interfaces interactivas.
+8. Implementar detección dinámica de parcelas y prompts.
+9. Añadir pruebas automatizadas.
 
 No se debe presentar ninguna de estas etapas como implementada hasta que exista código probado para ellas.

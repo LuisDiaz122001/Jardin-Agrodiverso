@@ -271,6 +271,10 @@ local function closePlayerSession(self: typeof(PlayerDataService), player: Playe
 	closingState.Completed = true
 	closingState.Event:Fire()
 
+	if released then
+		closingStatesByUserId[userId] = nil
+	end
+
 	return closingState.Success
 end
 
